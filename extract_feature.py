@@ -7,7 +7,7 @@ import glob
 import os, sys
 import torch
 from transformers import HubertModel
-import extract_feature as E
+import feature_pipeline as F
 
 def process_and_save_features(
     filepath,
@@ -24,19 +24,19 @@ def process_and_save_features(
     n_mels=80
 ):
     # 1. モノラル16kHz読み込み
-    waveform, _ = E.load_and_resample(filepath, target_sr=hubert_sr)
+    waveform, _ = F.load_and_resample(filepath, target_sr=hubert_sr)
 
     # 2. HuBERT特徴量抽出
-    hubert_features = E.extract_hubert_features(waveform, hubert_model, hubert_layer_index)
+    hubert_features = F.extract_hubert_features(waveform, hubert_model, hubert_layer_index)
 
     # 3. F0抽出＋NaN補間＋log変換
-    log_f0 = E.extract_log_f0_world(waveform, sr=hubert_sr, method=f0_method, eps=eps)
+    log_f0 = F.extract_log_f0_world(waveform, sr=hubert_sr, method=f0_method, eps=eps)
 
     # 4. HuBERT特徴とF0の長さを揃える
-    log_f0 = E.resample_f0_to_match_hubert(log_f0, len(hubert_features))
+    log_f0 = F.resample_f0_to_match_hubert(log_f0, len(hubert_features))
 
     # 5. HiFiGAN用の22.05kHzリサンプリング＆logメルスペクトル抽出
-    mel = E.compute_log_mel_spectrogram(filepath, target_sr=mel_sr, n_fft=n_fft, hop_length=hop_length, win_length=win_length, n_mels=n_mels)
+    mel = F.compute_log_mel_spectrogram(filepath, target_sr=mel_sr, n_fft=n_fft, hop_length=hop_length, win_length=win_length, n_mels=n_mels)
 
     # 6. 辞書にまとめて保存
     data_to_save = {

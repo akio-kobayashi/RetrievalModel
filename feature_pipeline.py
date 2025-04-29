@@ -15,8 +15,10 @@ def load_and_resample(filepath, target_sr=16000):
 # 2. 日本語HuBERTを使って指定層出力を抽出
 def extract_hubert_features(waveform, model, layer_index):
     with torch.no_grad():
-        features = model.extract_features(waveform.unsqueeze(0))[layer_index]
-    return features.squeeze(0)  # [T', hidden_size]
+        outputs = model(waveform.unsqueeze(0), output_hidden_states=True)
+        hidden_states = outputs.hidden_states  # Tuple of (layer0, layer1, ..., layerN)
+        features = hidden_states[layer_index].squeeze(0)  # remove batch dim
+    return features
 
 # 3. WorldでF0抽出＋NaN補間＋log変換
 def extract_log_f0_world(waveform, sr=16000, method='harvest', eps=1e-5):
@@ -64,11 +66,11 @@ def resample_f0_to_match_hubert(f0, hubert_length):
     Returns:
         f0_resampled (Tensor): [T_hubert] 長さ揃えたF0系列
     """
-    t_f0 = torch.linspace(0, 1, steps=f0.size(0), device=f0.device)
-    t_hubert = torch.linspace(0, 1, steps=hubert_length, device=f0.device)
-    f0_resampled = torch.interp(t_hubert, t_f0, f0)
-    return f0_resampled
-
+    f0_np = f0.cpu().numpy()
+    t_original = np.linspace(0, 1, len(f0_np))
+    t_target = np.linspace(0, 1, hubert_length)
+    f0_interp = np.interp(t_target, t_original, f0_np)
+    return torch.from_numpy(f0_interp).to(f0.device).float()    
 
 # 5. HiFiGAN条件でメルスペクトルを計算（22.05kHz, 80メル, logスケール）
 def compute_log_mel_spectrogram(filepath, target_sr=22050, n_fft=1024, hop_length=256, win_length=1024, n_mels=80):
