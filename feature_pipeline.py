@@ -34,6 +34,8 @@ def load_and_resample(filepath, target_sr=16000):
         waveform = waveform.mean(dim=0, keepdim=True)  # モノラル化
     if sr != target_sr:
         waveform = torchaudio.functional.resample(waveform, sr, target_sr)
+    if os.path.exists(normpath):
+        os.remove(normpath)
     return waveform.squeeze(0), target_sr  # [T], sr
 
 # 2. 日本語HuBERTを使って指定層出力を抽出

@@ -56,7 +56,8 @@ def main(args):
   for idx, row in df.iterrows():
     path = row['source']
     save_path = os.path.join(args.output_dir, os.path.splitext(os.path.basename(path))[0] + '.pt')
-    process_and_save_features(path, save_path, model)
+    if not os.path.exists(save_path):
+        process_and_save_features(path, save_path, model)
 
 if __name__ == '__main__':
     parser = ArgumentParser()
