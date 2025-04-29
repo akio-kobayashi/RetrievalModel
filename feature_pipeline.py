@@ -3,9 +3,33 @@ import torchaudio
 import pyworld as pw
 import numpy as np
 
+import subprocess
+import os
+import uuid
+
+# 0. ラウドネス正規化
+def normalize_audio(input_wav_path):
+    # /tmpに一時ファイル名を作成（UUIDで衝突防止）
+    output_wav_path = f"/tmp/{uuid.uuid4().hex}.wav"
+
+    # ffmpegコマンド構築
+    command = [
+        "ffmpeg",
+        "-y",  # 出力ファイルが既に存在していても上書き
+        "-i", input_wav_path,
+        "-af", "loudnorm",  # ラウドネス正規化
+        output_wav_path
+    ]
+
+    # subprocessで実行
+    subprocess.run(command, check=True)
+
+    return output_wav_path
+
 # 1. 音声読み込みとモノラル16kHzリサンプリング
 def load_and_resample(filepath, target_sr=16000):
-    waveform, sr = torchaudio.load(filepath)
+    normpath = normalize_audio(filepath)
+    waveform, sr = torchaudio.load(normpath)
     if waveform.size(0) > 1:
         waveform = waveform.mean(dim=0, keepdim=True)  # モノラル化
     if sr != target_sr:
