@@ -89,7 +89,7 @@ class IVFPQFaissRetriever:
             self.index = index_cpu
             
     # --------------------------------------------------------
-    def search(self, queries: torch.Tensor, topk: int = 5):
+    def search(self, queries: torch.Tensor, topk: int = 5, batch_first: bool = True):
         """Search nearest neighbours.
 
         Args:
@@ -101,13 +101,17 @@ class IVFPQFaissRetriever:
         q = queries.detach().cpu().float().numpy()
         q = _normalize_np(q, self.strategy).astype("float32", copy=False)
 
-        dists, idxs = self.index.search(q, topk)
-        results = []
-        for ids in idxs:
-            vecs = self.mmap[ids]  # shape (topk, D)
-            infos = [self.metadata[i] for i in ids]
-            results.append((vecs, infos))
-        return results
+        if batch_first:
+          vecs  = self.mmap[idxs]                               # (B, topk, D)
+          infos = [[self.metadata[i] for i in row] for row in idxs]
+          return vecs, infos
+        else:
+          results = []
+          for row in idxs:
+            vecs_row  = self.mmap[row]                        # (topk, D)
+            infos_row = [self.metadata[i] for i in row]
+            results.append((vecs_row, infos_row))
+          return results
 
 # ------------------------------------------------------------
 #  Helper: CLI-like single‑query convenience                   
