@@ -11,7 +11,7 @@ NormalizationStrategy = Literal["none", "l2", "cosine"]
 # ------------------------------------------------------------
 #  Utility                                                     
 # ------------------------------------------------------------
-
+   
 def normalize_features_np(features: np.ndarray, strategy: NormalizationStrategy) -> np.ndarray:
     """Return *copy* of features if normalized, otherwise original ref."""
     if strategy == "none":
@@ -64,46 +64,73 @@ class IVFPQFaissIndexer:
     # ----------------------- main API -----------------------
     def build_index(
         self,
-        features: torch.Tensor,          # [N,D] on CPU
+        features: torch.Tensor,          # [N,D] on CPU (optional, will be freed early)
         metadata: List[dict],
         memmap_path: str,
         index_path: str,
         metadata_path: str,
         gpu_device: int = 0,
     ):
-        # ---------- persist raw features ----------
-        feats = features.numpy().astype("float32", copy=False)
-        save_features_as_memmap(feats, memmap_path)
+        """Create IVFPQ index with minimal RAM footprint.
+
+        Steps:
+        1. Save raw features to memmap → free torch tensor
+        2. Train on nlist*train_sample_mult samples
+        3. Clone index to GPU (FP16 optional)
+        4. Add data in `batch_size` chunks with on‑the‑fly normalisation
+        5. Save CPU copy of index
+        """
+        t0 = time.time()
+
+        # ---------------- Raw → memmap ----------------
+        feats_np = features.numpy().astype("float32", copy=False)
+        np.memmap(memmap_path, "float32", "w+", shape=feats_np.shape)[:] = feats_np
+        del features  # free torch tensor ASAP
         save_metadata(metadata, metadata_path)
+        print(f"[1/5] memmap + metadata saved ({memmap_path})")
 
-        N, D = feats.shape
-        bs      = self.batch_size
-        n_train = min(self.nlist * 256, N)
+        N, D = feats_np.shape
+        print(f"Vectors: {N:,}, dim: {D}")
 
-        # ---------- create index ----------
-        index = faiss.IndexIVFPQ(faiss.IndexFlatL2(D), D,
-                                 self.nlist, self.m, self.nbits)
-
-        # ---------- TRAIN (サンプルだけ) ----------
+        # ---------------- Train ----------------
+        n_train = min(self.nlist * self.train_sample_mult, N)
         samp_idx = np.random.choice(N, n_train, replace=False)
-        train_mat = feats[samp_idx]
-        train_mat = normalize_features_np(train_mat, self.strategy)
-        index.train(train_mat)
+        train_mat = normalize_features_np(feats_np[samp_idx], self.strategy)
 
-        # ---------- GPU ----------
+        quantizer = faiss.IndexFlatL2(D)
+        cpu_index = faiss.IndexIVFPQ(quantizer, D, self.nlist, self.m, self.nbits)
+
+        class _Prog(faiss.ProgressCallback):
+            def __init__(self, total):
+                super().__init__()
+                self.bar = tqdm(total=total, desc="Training", unit="iter")
+            def callback(self, i):
+                self.bar.update(1)
+                return 0
+        cpu_index.train(train_mat, _Prog(25))
+        print("[2/5] train finished")
+
+        # ---------------- GPU clone ----------------
         res = faiss.StandardGpuResources()
         opts = faiss.GpuClonerOptions(); opts.useFloat16 = self.use_fp16
-        gpu_index = faiss.index_cpu_to_gpu(res, gpu_device, index, opts)
+        gpu_index = faiss.index_cpu_to_gpu(res, gpu_device, cpu_index, opts)
+        print("[3/5] cloned to GPU (FP16=" + str(self.use_fp16) + ")")
 
-        # ---------- ADD (バッチ正規化) ----------
-        for s in tqdm(range(0, N, bs), desc="Adding"):
+        # ---------------- Add in batches ----------------
+        bs = self.batch_size
+        bar = tqdm(range(0, N, bs), desc="Adding", unit="vec",
+                    total=(N + bs - 1)//bs,
+                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]")
+        for s in bar:
             e = min(s + bs, N)
-            chunk = normalize_features_np(feats[s:e], self.strategy)
+            chunk = normalize_features_np(feats_np[s:e], self.strategy)
             gpu_index.add(chunk)
+            bar.set_postfix(mem=f"{psutil.virtual_memory().percent}%")
+        del feats_np  # free raw features
+        print("[4/5] add complete, saving index…")
 
-        # ---------- SAVE ----------
         faiss.write_index(faiss.index_gpu_to_cpu(gpu_index), index_path)
-        print(f"Index saved → {index_path}")
+        print(f"[5/5] index saved → {index_path} | elapsed {time.time()-t0:.1f}s")
 
 
 # ------------------------------------------------------------
