@@ -24,7 +24,8 @@ def main(args):
     q = H.load_query_tensor(args.file)
     print(q.shape)
     vecs, infos = retr.search(q, topk=args.topk)  # unpack single query
-    vecs = rearrange(torch.from_numpy(vecs), 't b f -> b t f')
+    vecs = torch.from_numpy(vecs)
+    #vecs = rearrange(torch.from_numpy(vecs), 't b f -> b t f')
     print(vecs.shape)
     #dst_path = os.path.join(args.output_dir, os.path.splitext(os.path.basename(row['source']))[0] + '.pt')
     #H.replace_hubert_in_tensor(row['source'], vecs, dst_path)
