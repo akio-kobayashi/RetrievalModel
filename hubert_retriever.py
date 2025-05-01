@@ -98,8 +98,8 @@ class IVFPQFaissRetriever:
         Returns:
             List[Tuple[np.ndarray, List[dict]]]: one list per query.
         """
-        q = queries.detach().cpu().float().numpy()
-        q = _normalize_np(q, self.strategy).astype("float32", copy=False)
+        q = _normalize_np(queries.detach().cpu().float().numpy(), self.strategy).astype("float32", copy=False)
+        _, idxs = self.index.search(q, topk)      # idxs shape (B, topk)
 
         if batch_first:
           vecs  = self.mmap[idxs]                               # (B, topk, D)
