@@ -64,48 +64,47 @@ class IVFPQFaissIndexer:
     # ----------------------- main API -----------------------
     def build_index(
         self,
-        features: torch.Tensor,  # [N,D] on CPU
+        features: torch.Tensor,          # [N,D] on CPU
         metadata: List[dict],
         memmap_path: str,
         index_path: str,
         metadata_path: str,
         gpu_device: int = 0,
     ):
-        # ---------- persist raw features (non‑normalised) ----------
-        features_np = features.numpy().astype("float32", copy=False)
-        save_features_as_memmap(features_np, memmap_path)
+        # ---------- persist raw features ----------
+        feats = features.numpy().astype("float32", copy=False)
+        save_features_as_memmap(feats, memmap_path)
         save_metadata(metadata, metadata_path)
 
-        # ---------- normalise for distance metric ----------
-        norm_feats = normalize_features_np(features_np, self.strategy)
-        d = norm_feats.shape[1]
+        N, D = feats.shape
+        bs      = self.batch_size
+        n_train = min(self.nlist * 256, N)
 
-        # ---------- create IVFPQ index ----------
-        quantizer = faiss.IndexFlatL2(d)
-        index = faiss.IndexIVFPQ(quantizer, d, self.nlist, self.m, self.nbits)
+        # ---------- create index ----------
+        index = faiss.IndexIVFPQ(faiss.IndexFlatL2(D), D,
+                                 self.nlist, self.m, self.nbits)
 
-        # ---------- (1) train with subsample ----------
-        n_train = min(self.nlist * 256, norm_feats.shape[0])
-        perm = np.random.permutation(norm_feats.shape[0])[:n_train]
-        print(f"Training IVFPQ on {n_train:,} vectors…")
-        index.train(norm_feats[perm])
+        # ---------- TRAIN (サンプルだけ) ----------
+        samp_idx = np.random.choice(N, n_train, replace=False)
+        train_mat = feats[samp_idx]
+        train_mat = normalize_features_np(train_mat, self.strategy)
+        index.train(train_mat)
 
-        # ---------- (2) move index to GPU ----------
+        # ---------- GPU ----------
         res = faiss.StandardGpuResources()
-        cloner_opts = faiss.GpuClonerOptions()
-        cloner_opts.useFloat16 = self.use_fp16
-        gpu_index = faiss.index_cpu_to_gpu(res, gpu_device, index, cloner_opts)
+        opts = faiss.GpuClonerOptions(); opts.useFloat16 = self.use_fp16
+        gpu_index = faiss.index_cpu_to_gpu(res, gpu_device, index, opts)
 
-        # ---------- (3) add in batches to save VRAM ----------
-        N = norm_feats.shape[0]
-        bs = self.batch_size
-        for start in tqdm(range(0, N, bs), desc="Adding to index"):
-            end = min(start + bs, N)
-            gpu_index.add(norm_feats[start:end])
+        # ---------- ADD (バッチ正規化) ----------
+        for s in tqdm(range(0, N, bs), desc="Adding"):
+            e = min(s + bs, N)
+            chunk = normalize_features_np(feats[s:e], self.strategy)
+            gpu_index.add(chunk)
 
-        # ---------- (4) save CPU copy ----------
+        # ---------- SAVE ----------
         faiss.write_index(faiss.index_gpu_to_cpu(gpu_index), index_path)
         print(f"Index saved → {index_path}")
+
 
 # ------------------------------------------------------------
 #  Tensor directory helper (unchanged except minor speed tweak)
