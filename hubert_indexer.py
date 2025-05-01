@@ -99,19 +99,24 @@ class IVFPQFaissIndexer:
         # ---------------- Train ----------------
         n_train = min(self.nlist * self.train_sample_mult, N)
         samp_idx = np.random.choice(N, n_train, replace=False)
-        train_mat = normalize_features_np(feats_np[samp_idx], self.strategy)
+        train_mat = normalize_np(feats_np[samp_idx], self.strategy)
 
         quantizer = faiss.IndexFlatL2(D)
         cpu_index = faiss.IndexIVFPQ(quantizer, D, self.nlist, self.m, self.nbits)
 
-        class _Prog(faiss.ProgressCallback):
-            def __init__(self, total):
-                super().__init__()
-                self.bar = tqdm(total=total, desc="Training", unit="iter")
-            def callback(self, i):
-                self.bar.update(1)
-                return 0
-        cpu_index.train(train_mat, _Prog(25))
+        # ---------- TRAIN with optional progress ----------
+        if hasattr(faiss, "ProgressCallback"):
+            class _Prog(faiss.ProgressCallback):
+                def __init__(self, total):
+                    super().__init__()
+                    self.bar = tqdm(total=total, desc="Training", unit="iter")
+                def callback(self, i):
+                    self.bar.update(1)
+                    return 0
+            cpu_index.train(train_mat, _Prog(25))
+        else:
+            print("Faiss ProgressCallback unavailable; training without progress bar…")
+            cpu_index.train(train_mat))
         print("[2/5] train finished")
 
         # ---------------- GPU clone ----------------
@@ -127,7 +132,7 @@ class IVFPQFaissIndexer:
                     bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]")
         for s in bar:
             e = min(s + bs, N)
-            chunk = normalize_features_np(feats_np[s:e], self.strategy)
+            chunk = normalize_np(feats_np[s:e], self.strategy)
             gpu_index.add(chunk)
             bar.set_postfix(mem=f"{psutil.virtual_memory().percent}%")
         del feats_np  # free raw features
