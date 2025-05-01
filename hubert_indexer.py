@@ -55,7 +55,7 @@ class IVFPQFaissIndexer:
         strategy: NormalizationStrategy = "cosine",
         batch_size: int = 100_000,
         train_sample_mult: int = 256,
-        use_fp16: bool = True,
+        use_fp16: bool = False
     ):
         self.nlist = nlist
         self.m = m
@@ -99,7 +99,7 @@ class IVFPQFaissIndexer:
         # ---------------- Train ----------------
         n_train = min(self.nlist * self.train_sample_mult, N)
         samp_idx = np.random.choice(N, n_train, replace=False)
-        train_mat = normalize_np(feats_np[samp_idx], self.strategy)
+        train_mat = normalize_features_np(feats_np[samp_idx], self.strategy)
 
         quantizer = faiss.IndexFlatL2(D)
         cpu_index = faiss.IndexIVFPQ(quantizer, D, self.nlist, self.m, self.nbits)
@@ -116,7 +116,7 @@ class IVFPQFaissIndexer:
             cpu_index.train(train_mat, _Prog(25))
         else:
             print("Faiss ProgressCallback unavailable; training without progress bar…")
-            cpu_index.train(train_mat))
+            cpu_index.train(train_mat)
         print("[2/5] train finished")
 
         # ---------------- GPU clone ----------------
@@ -132,7 +132,7 @@ class IVFPQFaissIndexer:
                     bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]")
         for s in bar:
             e = min(s + bs, N)
-            chunk = normalize_np(feats_np[s:e], self.strategy)
+            chunk = normalize_features_np(feats_np[s:e], self.strategy)
             gpu_index.add(chunk)
             bar.set_postfix(mem=f"{psutil.virtual_memory().percent}%")
         del feats_np  # free raw features
