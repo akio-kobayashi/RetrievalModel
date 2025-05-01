@@ -2,9 +2,11 @@ import numpy as np
 import faiss
 import torch
 import pickle
-from typing import Literal, List
+from typing import Literal, List, Tuple
 from pathlib import Path
 from tqdm import tqdm
+import time
+import psutil
 
 NormalizationStrategy = Literal["none", "l2", "cosine"]
 
@@ -52,6 +54,7 @@ class IVFPQFaissIndexer:
         nbits: int = 8,
         strategy: NormalizationStrategy = "cosine",
         batch_size: int = 100_000,
+        train_sample_mult: int = 256,
         use_fp16: bool = True,
     ):
         self.nlist = nlist
@@ -59,6 +62,7 @@ class IVFPQFaissIndexer:
         self.nbits = nbits
         self.strategy = strategy
         self.batch_size = batch_size
+        self.train_sample_mult = train_sample_mult
         self.use_fp16 = use_fp16
 
     # ----------------------- main API -----------------------
