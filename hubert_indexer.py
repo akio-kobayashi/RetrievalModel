@@ -68,64 +68,30 @@ class IVFPQFaissIndexer:
     # ----------------------- main API -----------------------
     def build_index(
         self,
-        features: torch.Tensor,          # [N,D] on CPU (optional, will be freed early)
+        features: torch.Tensor,          # [N,D] on CPU
         metadata: List[dict],
         memmap_path: str,
         index_path: str,
         metadata_path: str,
-        gpu_device: int = 0,
     ):
-        """Create IVFPQ index with minimal RAM footprint.
-
-        Steps:
-        1. Save raw features to memmap → free torch tensor
-        2. Train on nlist*train_sample_mult samples
-        3. Clone index to GPU (FP16 optional)
-        4. Add data in `batch_size` chunks with on‑the‑fly normalisation
-        5. Save CPU copy of index
-        """
         t0 = time.time()
-
-        # ---------------- Raw → memmap ----------------
+        # 1) memmap 保存
         feats_np = features.numpy().astype("float32", copy=False)
         np.memmap(memmap_path, "float32", "w+", shape=feats_np.shape)[:] = feats_np
-        del features  # free torch tensor ASAP
         save_metadata(metadata, metadata_path)
-        print(f"[1/5] memmap + metadata saved ({memmap_path})")
-
+        del features  # RAM 釈放
         N, D = feats_np.shape
-        print(f"Vectors: {N:,}, dim: {D}")
+        print(f"[1/4] memmap+metadata done → {memmap_path} | vec {N:,} dim {D}")
 
-        # ---------------- Train ----------------
-        n_train = min(self.nlist * self.train_sample_mult, N)
-        samp_idx = np.random.choice(N, n_train, replace=False)
-        train_mat = normalize_features_np(feats_np[samp_idx], self.strategy)
+        # 2) index & train
+        train_n = min(self.nlist * self.train_sample_mult, N)
+        samp = np.random.choice(N, train_n, replace=False)
+        train_mat = normalize_features_np(feats_np[samp], self.strategy)
+        index = faiss.IndexIVFPQ(faiss.IndexFlatL2(D), D, self.nlist, self.m, self.nbits)
+        index.train(train_mat)
+        print("[2/4] train finished on", train_n, "vecs")
 
-        quantizer = faiss.IndexFlatL2(D)
-        cpu_index = faiss.IndexIVFPQ(quantizer, D, self.nlist, self.m, self.nbits)
-
-        # ---------- TRAIN with optional progress ----------
-        if hasattr(faiss, "ProgressCallback"):
-            class _Prog(faiss.ProgressCallback):
-                def __init__(self, total):
-                    super().__init__()
-                    self.bar = tqdm(total=total, desc="Training", unit="iter")
-                def callback(self, i):
-                    self.bar.update(1)
-                    return 0
-            cpu_index.train(train_mat, _Prog(25))
-        else:
-            print("Faiss ProgressCallback unavailable; training without progress bar…")
-            cpu_index.train(train_mat)
-        print("[2/5] train finished")
-
-        # ---------------- GPU clone ----------------
-        res = faiss.StandardGpuResources()
-        opts = faiss.GpuClonerOptions(); opts.useFloat16 = self.use_fp16
-        gpu_index = faiss.index_cpu_to_gpu(res, gpu_device, cpu_index, opts)
-        print("[3/5] cloned to GPU (FP16=" + str(self.use_fp16) + ")")
-
-        # ---------------- Add in batches ----------------
+        # 3) add in batches
         bs = self.batch_size
         bar = tqdm(range(0, N, bs), desc="Adding", unit="vec",
                     total=(N + bs - 1)//bs,
@@ -133,13 +99,14 @@ class IVFPQFaissIndexer:
         for s in bar:
             e = min(s + bs, N)
             chunk = normalize_features_np(feats_np[s:e], self.strategy)
-            gpu_index.add(chunk)
+            index.add(chunk)
             bar.set_postfix(mem=f"{psutil.virtual_memory().percent}%")
-        del feats_np  # free raw features
-        print("[4/5] add complete, saving index…")
+        del feats_np
+        print("[3/4] add complete, saving index…")
 
-        faiss.write_index(faiss.index_gpu_to_cpu(gpu_index), index_path)
-        print(f"[5/5] index saved → {index_path} | elapsed {time.time()-t0:.1f}s")
+        # 4) save
+        faiss.write_index(index, index_path)
+        print(f"[4/4] index saved → {index_path} | elapsed {time.time()-t0:.1f}s")
 
 
 # ------------------------------------------------------------
