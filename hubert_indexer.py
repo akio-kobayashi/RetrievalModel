@@ -135,10 +135,15 @@ def index_from_tensor_directory(
     metadata_path: str,
     key: str = "hubert",
     strategy: NormalizationStrategy = "cosine",
-    nlist: int = 1024,
-    m: int = 16,
+    nlist: int = 512,
+    m: int = 8,
     nbits: int = 8,
     gpu_device: int = 0,
+    indexer_kwargs = dict(
+        batch_size = 10_000,
+        use_fp16 = True,
+        train_sample_mut = 128,
+    )
 ):
     feats, meta = load_hubert_features_from_tensor_files(tensor_dir, key)
     indexer = IVFPQFaissIndexer(nlist=nlist, m=m, nbits=nbits, strategy=strategy)

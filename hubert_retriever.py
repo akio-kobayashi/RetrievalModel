@@ -22,7 +22,29 @@ def _normalize_np(x: np.ndarray, strategy: NormalizationStrategy) -> np.ndarray:
 def _load_metadata(path: str) -> List[dict]:
     with open(path, "rb") as f:
         return pickle.load(f)
+    
+# ------------------------------------------------------------
+#  Tensor key replacement helper                              
+# ------------------------------------------------------------
 
+def replace_hubert_in_tensor(
+    src_path: str,
+    new_tensor: torch.Tensor,
+    dst_path: Optional[str] = None,
+    key: str = "hubert",
+):
+    """Load a .pt file, replace its `key` tensor with `new_tensor`, and save.
+
+    Args:
+        src_path: input .pt file path.
+        new_tensor: tensor to overwrite `key`.
+        dst_path: if None, overwrite *in‑place*; otherwise save to new file.
+        key: tensor entry name to replace (default "hubert").
+    """
+    data = torch.load(src_path, map_location="cpu")
+    data[key] = new_tensor
+    torch.save(data, dst_path or src_path)
+    
 # ------------------------------------------------------------
 #  Retriever                                                  
 # ------------------------------------------------------------
