@@ -58,7 +58,7 @@ class IVFPQFaissRetriever:
         memmap_path: str,
         metadata_path: str,
         strategy: NormalizationStrategy = "cosine",
-        gpu_device: int = 0,
+        gpu_device: int = -1,
         fp16: bool = True,
         memmap_shape: Optional[Tuple[int, int]] = None,
     ):
@@ -82,8 +82,12 @@ class IVFPQFaissRetriever:
         res = faiss.StandardGpuResources()
         cloner_opts = faiss.GpuClonerOptions()
         cloner_opts.useFloat16 = fp16
-        self.index = faiss.index_cpu_to_gpu(res, gpu_device, index_cpu, cloner_opts)
 
+        if gpu_device is not None and gpu_device >=0 and gpu_device < faiss.get_num_gpus():
+            self.index = faiss.index_cpu_to_gpu(res, gpu_device, index_cpu, cloner_opts)
+        else:
+            self.index = index_cpu
+            
     # --------------------------------------------------------
     def search(self, queries: torch.Tensor, topk: int = 5):
         """Search nearest neighbours.
@@ -113,7 +117,8 @@ def load_query_tensor(file: str, key: str = "hubert") -> torch.Tensor:
     data = torch.load(file, map_location="cpu")
     if key not in data:
         raise KeyError(f"{key} not in {file}")
-    return data[key].mean(0, keepdim=True)  # (1,D)
+    return data[key].float()
+    #return data[key].mean(0, keepdim=True)  # (1,D)
 
 
 def query_similar_features(
@@ -123,7 +128,7 @@ def query_similar_features(
     metadata_path: str,
     strategy: NormalizationStrategy = "cosine",
     topk: int = 5,
-    gpu_device: int = 0,
+    gpu_device: int = -1,
 ):
     q = load_query_tensor(query_file)
     retr = IVFPQFaissRetriever(

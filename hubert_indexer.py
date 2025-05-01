@@ -140,7 +140,6 @@ def index_from_tensor_directory(
     nlist: int = 512,
     m: int = 8,
     nbits: int = 8,
-    gpu_device: int = 0,
     indexer_kwargs = dict(
         batch_size = 10_000,
         use_fp16 = True,
@@ -155,5 +154,4 @@ def index_from_tensor_directory(
         memmap_path=memmap_path,
         index_path=index_path,
         metadata_path=metadata_path,
-        gpu_device=gpu_device,
     )
