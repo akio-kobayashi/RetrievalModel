@@ -114,3 +114,37 @@ def data_processing(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
         w_pad[i, : twav[i]] = waves[i]
 
     return h_pad, p_pad, w_pad
+
+import argparse
+from pathlib import Path
+import torch
+from torch.utils.data import DataLoader
+
+def run_test(csv_path: Path, stats_path: Path, batch_size: int, sr: int):
+    stats = torch.load(stats_path, map_location="cpu")  # {"mean": float, "std": float}
+    ds = VCWaveDataset(csv_path, stats, target_sr=sr)
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=data_processing)
+
+    hub, pit, wav = next(iter(dl))
+    print("\n=== Batch Shapes ===")
+    print(f"hubert : {hub.shape}")
+    print(f"pitch  : {pit.shape}")
+    print(f"wave   : {wav.shape}")
+
+    # simple sanity check: mean/std close to 0/1 after normalisation
+    wav_mean = wav.mean().item()
+    wav_std = wav.std().item()
+    print("\n=== Wave Normalisation Check ===")
+    print(f"mean ≈ 0 → {wav_mean:+.4f}")
+    print(f"std  ≈ 1 → {wav_std:+.4f}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Quick test for VCWaveDataset & collate function")
+    parser.add_argument("--csv", type=Path, help="path to CSV file")
+    parser.add_argument("--stats", type=Path, help="path to stats pt file (mean/std)")
+    parser.add_argument("--batch", type=int, default=4, help="batch size for test")
+    parser.add_argument("--sr", type=int, default=16000, help="target sampling rate")
+    args = parser.parse_args()
+
+    run_test(args.csv, args.stats, args.batch, args.sr)
