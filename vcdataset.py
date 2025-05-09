@@ -63,7 +63,7 @@ class VCWaveDataset(Dataset):
         row = self.rows[idx]
 
         # -------- HuBERT + pitch tensor --------
-        pt = torch.load(row["hubert"], map_location="cpu")
+        pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
         if "hubert" not in pt or "log_f0" not in pt:
             raise KeyError("Tensor file must contain 'hubert' and 'log_f0' keys")
         hubert: torch.Tensor = pt["hubert"].float()         # (T,D=768)
@@ -121,7 +121,7 @@ import torch
 from torch.utils.data import DataLoader
 
 def run_test(csv_path: Path, stats_path: Path, batch_size: int, sr: int):
-    stats = torch.load(stats_path, map_location="cpu")  # {"mean": float, "std": float}
+    stats = torch.load(stats_path, map_location="cpu", weights_only=True)  # {"mean": float, "std": float}
     ds = VCWaveDataset(csv_path, stats, target_sr=sr)
     dl = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=data_processing)
 

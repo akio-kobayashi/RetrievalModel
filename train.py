@@ -19,7 +19,7 @@ from solver import VCSystem
 
 def train(cfg):
     # ---------------- Dataset & Dataloader ----------------
-    stats = torch.load(cfg["stats_tensor"], map_location="cpu")  # (mean,std)
+    stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)  # (mean,std)
 
     train_ds = VCWaveDataset(cfg["train_csv"], stats, target_sr=cfg.get("sr", 16_000))
     val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000))
