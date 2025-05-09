@@ -34,21 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        numpy pandas tqdm pytorch_lightning==2.2.0 \
        librosa soundfile
  
-
-# -------------------------------------------------------------
-#  環境確認スクリプト (optional)
-# -------------------------------------------------------------
-RUN python - <<'PY'
-import torch, faiss, numpy as np
-print('PyTorch:', torch.__version__, 'CUDA?', torch.cuda.is_available())
-print('faiss  :', faiss.__version__)
-res = faiss.StandardGpuResources(); print('faiss GPU OK')
-xb = np.random.random((1000, 64)).astype('float32')
-index = faiss.index_cpu_to_gpu(res, 0, faiss.IndexFlatL2(64))
-index.add(xb)
-print('Test search IDs:', index.search(xb[:1], 5)[1])
-PY
-
 # デフォルト作業ディレクトリ
 WORKDIR /
 #CMD [\"python\", \"-c\", \"print('Docker image ready. Mount your code with -v and run your scripts')\"]
