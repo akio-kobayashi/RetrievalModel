@@ -62,7 +62,7 @@ def main(args):
     plt.tight_layout()
     plt.savefig(fig_path)
     plt.close()
-    print("Histogram saved →", fig_path) →", fig_path)
+    print("Histogram saved →", fig_path)
 
     # ----- save top‑1 replaced tensor -----
     dst_pt = os.path.join(args.output_dir, os.path.basename(args.file))
