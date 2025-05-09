@@ -3,6 +3,7 @@ from typing import List, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.parametrizations import weight_norm  # ← 追加
 
 ###############################################################################
 #  Posterior Encoder – HuBERT (+ Pitch) → latent z                           #
@@ -67,7 +68,7 @@ class Generator(nn.Module):
 
     def __init__(self, in_ch: int = 256, upsample_rates: List[int] = [8, 8, 2, 2]):
         super().__init__()
-        self.pre = nn.utils.weight_norm(nn.Conv1d(in_ch, 512, 7, padding=3))
+        self.pre = weight_norm(nn.Conv1d(in_ch, 512, 7, padding=3))
         ch = 512
         self.ups = nn.ModuleList()
         self.resblocks = nn.ModuleList()
@@ -75,7 +76,7 @@ class Generator(nn.Module):
             self.ups.append(
                 nn.Sequential(
                     nn.LeakyReLU(0.1),
-                    nn.utils.weight_norm(
+                    weight_norm(
                         nn.ConvTranspose1d(
                             ch,
                             ch // 2,
@@ -91,7 +92,7 @@ class Generator(nn.Module):
             self.resblocks.append(nn.ModuleList([ResBlock(ch) for _ in range(3)]))
         self.post = nn.Sequential(
             nn.LeakyReLU(0.1),
-            nn.utils.weight_norm(nn.Conv1d(ch, 1, 7, padding=3)),
+            weight_norm(nn.Conv1d(ch, 1, 7, padding=3)),
             nn.Tanh(),
         )
 
