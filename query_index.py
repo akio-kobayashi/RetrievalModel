@@ -47,7 +47,7 @@ def main(args):
         sim_t = cosine_similarity(frame, vecs_t[0])
         similarities.append(sim_t.item())
         if (t + 1) % 100 == 0:
-            print(f" processed {t+1}/{len(q)} frames…", end="")
+            print(f" processed {t+1}/{len(q)} frames…")
 
     top1_mean_sim = sum(similarities) / len(similarities)
     print(f"Mean cosine (top‑1): {top1_mean_sim:.4f}")
