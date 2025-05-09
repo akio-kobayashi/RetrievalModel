@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   • torchaudio
 #   • faiss-gpu (公式 wheelページ経由)
 # -------------------------------------------------------------
-RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
-    && pip install --no-cache-dir \
-        torch==2.2.*+cu121 torchaudio==2.2.*+cu121 -f https://download.pytorch.org/whl/torch_stable.html \
-    && pip install --no-cache-dir \
-        faiss-gpu -f https://faiss.ai/whl/ \
-        numpy pandas tqdm pytorch_lightning==2.2.* \
-        librosa soundfile
+  RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
+  && pip install --no-cache-dir \
+       torch==2.2.0+cu121 \
+       torchaudio==2.2.0+cu121 \
+       --index-url https://download.pytorch.org/whl/cu121 \
+  && pip install --no-cache-dir \
+       faiss-gpu -f https://faiss.ai/whl/ \
+       numpy pandas tqdm pytorch_lightning==2.2.0 \
+       librosa soundfile
+ 
 
 # -------------------------------------------------------------
 #  環境確認スクリプト (optional)
