@@ -54,9 +54,9 @@ def compute_stats(csv_path: Path, target_sr: int = 16_000):
 
 def main():
     ap = argparse.ArgumentParser(description="Compute global mean/std of wave column in CSV")
-    ap.add_argument("csv", type=Path)
-    ap.add_argument("out", type=Path, help="output .pt file to save tensor(mean,std)")
-    ap.add_argument("sr", type=int, default=16000, help="target sampling rate")
+    ap.add_argument("--csv", type=Path)
+    ap.add_argument("--out", type=Path, help="output .pt file to save tensor(mean,std)")
+    ap.add_argument("--sr", type=int, default=16000, help="target sampling rate")
     args = ap.parse_args()
 
     mean, std = compute_stats(args.csv, args.sr)
@@ -64,7 +64,6 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     torch.save(stats, args.out)
     print(f"Saved mean={mean:.6f}, std={std:.6f} → {args.out}")
-    print(f"Saved mean={stats[0]:.6f}, std={stats[1]:.6f} → {args.out}")
 
 
 if __name__ == "__main__":

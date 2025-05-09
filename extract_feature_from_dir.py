@@ -8,7 +8,6 @@ import os, sys
 import torch
 from transformers import HubertModel
 import feature_pipeline as F
-import glob
 
 def process_and_save_features(
     filepath,
@@ -50,16 +49,17 @@ def process_and_save_features(
     return hubert_features, log_f0
 
 def main(args):
-  os.makedirs(args.output_dir)
+  if not os.path.isdir(args.output_dir):
+      os.makedirs(args.output_dir)
   model = HubertModel.from_pretrained('rinna/japanese-hubert-base')
   model.eval()
 
   for dir in args.dir:
-    for idx, filepath in enumerate(sorted(glob(os.path.join(dir, '*.wav'))), start=1):
+    for idx, filepath in enumerate(sorted(glob.glob(os.path.join(dir, '*.wav'))), start=1):
       save_path = os.path.join(args.output_dir, os.path.splitext(os.path.basename(filepath))[0] + '.pt')
       if not os.path.exists(save_path):
          process_and_save_features(filepath, save_path, model)
-
+         
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--dir', nargs='*', type=str, required=True)
