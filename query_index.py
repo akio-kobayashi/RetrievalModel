@@ -50,8 +50,7 @@ def main(args):
             print(f" processed {t+1}/{len(q)} frames…", end="")
 
     top1_mean_sim = sum(similarities) / len(similarities)
-    print(f"
-Mean cosine (top‑1): {top1_mean_sim:.4f}")
+    print(f"Mean cosine (top‑1): {top1_mean_sim:.4f}")
 
     # ----- histogram -----
     fig_path = os.path.join(args.output_dir, os.path.splitext(os.path.basename(args.file))[0] + "_sim_hist.png")
