@@ -41,8 +41,8 @@ class VCWaveDataset(Dataset):
                     raise ValueError("CSV must have 'hubert' and 'wave' columns")
                 self.rows.append(r)
 
-        self.mean = stats_tensor[0].item()
-        self.std = stats_tensor[1].item()
+        self.mean = stats_tensor['mean']
+        self.std = stats_tensor['std']
         self.target_sr = target_sr
         self._resampler: Optional[T.Resample] = None
 
