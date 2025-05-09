@@ -35,18 +35,18 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
 # -------------------------------------------------------------
 #  環境確認スクリプト (optional)
 # -------------------------------------------------------------
-RUN python - <<'PY'\n\
-import torch, faiss, numpy as np, os, sys\n\
-print('PyTorch:', torch.__version__, 'CUDA?', torch.cuda.is_available())\n\
-print('faiss    version:', faiss.__version__)\n\
-res = faiss.StandardGpuResources(); print('faiss GPU ok')\n\
-xb = np.random.random((1000, 64)).astype('float32')\n\
-index = faiss.index_cpu_to_gpu(res, 0, faiss.IndexFlatL2(64))\n\
-index.add(xb)\n\
-print('Test search:', index.search(xb[:1], 5)[1])\n\
+RUN python - <<'PY'
+import torch, faiss, numpy as np
+print('PyTorch:', torch.__version__, 'CUDA?', torch.cuda.is_available())
+print('faiss  :', faiss.__version__)
+res = faiss.StandardGpuResources(); print('faiss GPU OK')
+xb = np.random.random((1000, 64)).astype('float32')
+index = faiss.index_cpu_to_gpu(res, 0, faiss.IndexFlatL2(64))
+index.add(xb)
+print('Test search IDs:', index.search(xb[:1], 5)[1])
 PY
 
 # デフォルト作業ディレクトリ
-#WORKDIR /workspace
+WORKDIR /
 #CMD [\"python\", \"-c\", \"print('Docker image ready. Mount your code with -v and run your scripts')\"]
 CMD ["bash"]
