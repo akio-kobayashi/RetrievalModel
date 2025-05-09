@@ -52,9 +52,9 @@ class ResBlock(nn.Module):
         self.convs = nn.ModuleList([
             nn.Sequential(
                 nn.LeakyReLU(0.1),
-                nn.utils.weight_norm(nn.Conv1d(ch, ch, k, padding=(k - 1) // 2)),
+                weight_norm(nn.Conv1d(ch, ch, k, padding=(k - 1) // 2)),
                 nn.LeakyReLU(0.1),
-                nn.utils.weight_norm(nn.Conv1d(ch, ch, k, padding=(k - 1) // 2)),
+                weight_norm(nn.Conv1d(ch, ch, k, padding=(k - 1) // 2)),
             )
             for k in kernels
         ])
@@ -118,14 +118,14 @@ class PeriodDiscriminator(nn.Module):
         ks = [5, 3, 3, 3, 3]
         for i in range(len(ks)):
             seq.append(
-                nn.utils.weight_norm(
+                weight_norm(
                     nn.Conv2d(
                         chs[i], chs[i + 1], (ks[i], 1), stride=(3 if i == 0 else 1, 1), padding=((ks[i] - 1) // 2, 0)
                     )
                 )
             )
             seq.append(nn.LeakyReLU(0.1))
-        seq.append(nn.utils.weight_norm(nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))))
+        seq.append(weight_norm(nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))))
         self.convs = nn.ModuleList(seq)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
