@@ -36,37 +36,40 @@ def main(args):
     q = torch.load(args.file, map_location="cpu")["hubert"].float()  # (T,D)
     print("Query shape:", q.shape)
 
-    # ----- batch search -----
-    vecs_np, infos_all = retr.search(q, topk=args.topk, batch_first=True)  # (T, topk, D)  # len=T, each (vecs(topk,D), infos)
-
-    # stack to (topk, T, D)
-    vecs = torch.from_numpy(vecs_np).permute(1, 0, 2)  # (topk, T, D)
-    infos = list(zip(*infos_all))  # len=topk, each T dicts  # list length T
-    print("Retrieved shape:", vecs.shape)
-
-    # ----- similarity per k -----
+    # ----- frame‑wise search ---------------
     similarities = []
-    for k in range(args.topk):
-        sim = cosine_similarity(q, vecs[k])
-        similarities.append(sim.item())
-        print(f"[top{k+1}] mean cosine = {sim:.4f}")
+    topk_vecs   = []  # store top‑1 vec for optional replacement
+
+    for t, frame in enumerate(q):
+        vecs_np, _ = retr.search(frame.unsqueeze(0), topk=args.topk, batch_first=True)  # (1, topk, D)
+        vecs_t = torch.from_numpy(vecs_np[0])  # (topk,D)
+        topk_vecs.append(vecs_t[0])            # save top1
+        sim_t = cosine_similarity(frame, vecs_t[0])
+        similarities.append(sim_t.item())
+        if (t + 1) % 100 == 0:
+            print(f" processed {t+1}/{len(q)} frames…", end="
+")
+
+    top1_mean_sim = sum(similarities) / len(similarities)
+    print(f"
+Mean cosine (top‑1): {top1_mean_sim:.4f}")
 
     # ----- histogram -----
     fig_path = os.path.join(args.output_dir, os.path.splitext(os.path.basename(args.file))[0] + "_sim_hist.png")
     plt.figure(figsize=(6, 4))
-    plt.bar(range(1, args.topk + 1), similarities, color="steelblue")
-    plt.xlabel("k-th neighbour")
-    plt.ylabel("Mean Cosine Similarity")
-    plt.title("Average similarity per rank")
-    plt.ylim(0, 1)
+    plt.hist(similarities, bins=40, color="steelblue", edgecolor="black")
+    plt.xlabel("Cosine similarity (top-1)")
+    plt.ylabel("Frame count")
+    plt.title("Distribution of frame‑wise similarities")
     plt.tight_layout()
     plt.savefig(fig_path)
     plt.close()
     print("Histogram saved →", fig_path)
 
-    # ----- save top‑1 replaced tensor -----
+    # ----- save replaced tensor (stack of top1 vecs) -----
+    new_hubert = torch.stack(topk_vecs)  # (T,D)
     dst_pt = os.path.join(args.output_dir, os.path.basename(args.file))
-    replace_hubert_in_tensor(args.file, vecs[0].cpu(), dst_pt)
+    replace_hubert_in_tensor(args.file, new_hubert.cpu(), dst_pt)
     print("Replaced tensor saved →", dst_pt)
 
 
