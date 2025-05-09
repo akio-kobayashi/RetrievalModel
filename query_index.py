@@ -37,11 +37,11 @@ def main(args):
     print("Query shape:", q.shape)
 
     # ----- batch search -----
-    results = retr.search(q, topk=args.topk)  # len=T, each (vecs(topk,D), infos)
+    vecs_np, infos_all = retr.search(q, topk=args.topk, batch_first=True)  # (T, topk, D)  # len=T, each (vecs(topk,D), infos)
 
     # stack to (topk, T, D)
-    vecs = torch.stack([torch.from_numpy(r[0]) for r in results]).permute(1, 0, 2)
-    infos = [r[1] for r in results]  # list length T
+    vecs = torch.from_numpy(vecs_np).permute(1, 0, 2)  # (topk, T, D)
+    infos = list(zip(*infos_all))  # len=topk, each T dicts  # list length T
     print("Retrieved shape:", vecs.shape)
 
     # ----- similarity per k -----
@@ -61,7 +61,8 @@ def main(args):
     plt.ylim(0, 1)
     plt.tight_layout()
     plt.savefig(fig_path)
-    print("Histogram saved →", fig_path)
+    plt.close()
+    print("Histogram saved →", fig_path) →", fig_path)
 
     # ----- save top‑1 replaced tensor -----
     dst_pt = os.path.join(args.output_dir, os.path.basename(args.file))
