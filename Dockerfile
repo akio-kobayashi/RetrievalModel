@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ln -s /usr/bin/python3.10 /usr/local/bin/python && \
     curl -sS https://bootstrap.pypa.io/get-pip.py | python && \
     rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
 
 # -------------------------------------------------------------
 #  Python パッケージ
@@ -33,7 +34,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        faiss-gpu -f https://faiss.ai/whl/ \
        numpy pandas tqdm pytorch_lightning==2.2.0 \
        librosa soundfile
- 
+  RUN pip install --no-cache-dir \
+      pillow \
+      "matplotlib[required]" \
+      transformers
+  RUN pip install --no-cache-dir ffmpeg-python
 # デフォルト作業ディレクトリ
 WORKDIR /
 #CMD [\"python\", \"-c\", \"print('Docker image ready. Mount your code with -v and run your scripts')\"]
