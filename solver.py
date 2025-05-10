@@ -151,3 +151,101 @@ class VCSystem(pl.LightningModule):
             {"scheduler": sched_g, "interval": "epoch"},
             {"scheduler": sched_d, "interval": "epoch"},
         ])
+
+# ============================================================
+#  Fine‑tune variant with Soft‑DTW alignment                  
+# ============================================================
+class FineTuneVC(VCSystem):
+    """VCSystem with Soft‑DTW loss to align sequences of unequal length."""
+
+    def __init__(self, ckpt_path: str, dtw_gamma: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        # load base weights
+        state = torch.load(ckpt_path, map_location="cpu")
+        if "state_dict" in state:
+            self.load_state_dict(state["state_dict"], strict=False)
+        else:
+            self.load_state_dict(state, strict=False)
+        self.soft_dtw = _SoftDTW(gamma=dtw_gamma, normalize=True)
+
+    # override loss combination
+    def training_step(self, batch, batch_idx):
+        hub, pit, wav_real = batch
+        opt_g, opt_d = self.optimizers()
+
+        wav_fake_full = self.gen(hub, pit).detach()
+        cut_len = min(wav_real.size(-1), wav_fake_full.size(-1))
+        wav_real_c = wav_real[..., :cut_len]
+        wav_fake_c = wav_fake_full[..., :cut_len]
+
+        # ---- D update ----
+        opt_d.zero_grad()
+        rl_mpd, _ = self.disc_mpd(wav_real_c.unsqueeze(1))
+        rl_msd, _ = self.disc_msd(wav_real_c.unsqueeze(1))
+        fk_mpd, _ = self.disc_mpd(wav_fake_c.unsqueeze(1))
+        fk_msd, _ = self.disc_msd(wav_fake_c.unsqueeze(1))
+        loss_d = self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)
+        self.manual_backward(loss_d)
+        opt_d.step()
+
+        # ---- G update ----
+        wav_fake_full = self.gen(hub, pit)
+        wav_fake_c = wav_fake_full[..., :cut_len]
+        fk_mpd, fk_feat_mpd = self.disc_mpd(wav_fake_c.unsqueeze(1))
+        fk_msd, fk_feat_msd = self.disc_msd(wav_fake_c.unsqueeze(1))
+        loss_adv = self._adv_g(fk_mpd) + self._adv_g(fk_msd)
+
+        _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
+        _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
+        loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
+        loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
+        loss_dtw = self.soft_dtw(wav_real, wav_fake_full)  # align full‑length sequences
+
+        loss_g = (loss_adv + self.hparams.lambda_fm * loss_fm +
+                   self.hparams.lambda_mag * loss_mag + self.hparams.lambda_sc * loss_sc +
+                   loss_dtw)
+
+        opt_g.zero_grad()
+        self.manual_backward(loss_g)
+        opt_g.step()
+
+        self.log_dict({
+            "loss_d": loss_d,
+            "loss_g": loss_g,
+            "loss_dtw": loss_dtw,
+            "loss_adv": loss_adv,
+            "loss_fm": loss_fm,
+            "loss_mag": loss_mag,
+            "loss_sc": loss_sc,
+        }, prog_bar=True, on_step=True)
+
+# ------------------------------------------------------------
+#  Simple Soft‑DTW implementation (batched)                    
+# ------------------------------------------------------------
+class _SoftDTW(nn.Module):
+    def __init__(self, gamma: float = 0.1, normalize: bool = True):
+        super().__init__()
+        self.gamma = gamma
+        self.normalize = normalize
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        """x,y: (B,N) vs (B,M) sequences."""
+        B, N = x.shape
+        M = y.size(1)
+        D = torch.cdist(x.unsqueeze(-1), y.unsqueeze(-1), p=1).squeeze(-1)  # (B,N,M)
+        R = torch.zeros(B, N + 2, M + 2, device=x.device) + 1e6
+        R[:, 0, 0] = 0
+        for i in range(1, N + 1):
+            d = D[:, i - 1]
+            for j in range(1, M + 1):
+                r0 = -R[:, i - 1, j - 1] / self.gamma
+                r1 = -R[:, i - 1, j] / self.gamma
+                r2 = -R[:, i, j - 1] / self.gamma
+                rmax = torch.max(torch.stack([r0, r1, r2], dim=-1), dim=-1).values
+                rsum = torch.exp(r0 - rmax) + torch.exp(r1 - rmax) + torch.exp(r2 - rmax)
+                softmin = -self.gamma * (torch.log(rsum) + rmax)
+                R[:, i, j] = d[:, j - 1] + softmin
+        loss = R[:, N, M]
+        if self.normalize:
+            loss = loss / (N + M)
+        return loss.mean()

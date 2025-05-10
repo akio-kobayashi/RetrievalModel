@@ -64,7 +64,7 @@ def train(cfg):
     # ---------------- Checkpoint callback ----------------
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        monitor="loss_g/epoch",  # define in validation_epoch_end if needed
+        monitor="loss_g",  # define in validation_epoch_end if needed
         save_last=True,
         save_top_k=1,
         mode="min",
