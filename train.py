@@ -74,7 +74,6 @@ def train(cfg):
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.get("gpus", 1),
         precision="16-mixed",
-        accumulate_grad_batchs=4,
         default_root_dir=cfg["work_dir"],
         logger=tb_logger,
         callbacks=[ckpt_cb],
