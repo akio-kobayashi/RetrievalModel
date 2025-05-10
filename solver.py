@@ -52,7 +52,7 @@ class VCSystem(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-
+        self.automatic_optimization = False
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()

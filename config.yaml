@@ -46,9 +46,9 @@ gpus:        1     # 0 → CPU / 1→ single GPU / N→ multi GPU
 # ────────────────────────────────
 #  ロギング・チェックポイント
 # ────────────────────────────────
-work_dir: logs            # Lightning の default_root_dir
-log_dir:  logs/tb         # TensorBoard 保存先
-ckpt_dir: logs/ckpt       # ModelCheckpoint が .ckpt を置く先
+work_dir: /media/akio/hdd1/rvc/models/test/logs            # Lightning の default_root_dir
+log_dir:  /media/akio/hdd1/rvc/models/test/logs/tb         # TensorBoard 保存先
+ckpt_dir: /media/akio/hdd1/rvc/models/test/logs/ckpt       # ModelCheckpoint が .ckpt を置く先
 # ModelCheckpoint は train_vc.py 内で固定：
 #   monitor=loss_g/epoch,  save_last: true,  save_top_k: 1,  every_n_epochs: 50
 # ============================================================
