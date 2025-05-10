@@ -89,83 +89,83 @@ class VCSystem(pl.LightningModule):
         return self.gen(hubert, pitch)
 
     # ---------------- training ----------------
-def training_step(self, batch, batch_idx):
-    hub, pit, wav_real = batch
-    opt_g, opt_d = self.optimizers()
-    step = self.global_step
+    def training_step(self, batch, batch_idx):
+      hub, pit, wav_real = batch
+      opt_g, opt_d = self.optimizers()
+      step = self.global_step
 
-    # ------------- Generator forward -------------
-    wav_fake = self.gen(hub, pit)
-    cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
-    wav_real_c = wav_real[..., :cut_len]
-    wav_fake_c = wav_fake[..., :cut_len]
-    loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
+      # ------------- Generator forward -------------
+      wav_fake = self.gen(hub, pit)
+      cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
+      wav_real_c = wav_real[..., :cut_len]
+      wav_fake_c = wav_fake[..., :cut_len]
+      loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
 
-    # ======================================================
-    #  STAGE-1 : STFT のみ  (step < warmup_steps)
-    # ======================================================
-    if step < self.warmup_steps:
-        # ---- G update (STFTのみ) ----
-        loss_g_total = (self.hparams.lambda_mag * loss_mag +
-                        self.hparams.lambda_sc  * loss_sc)
-        loss_g = loss_g_total / self.grad_accum
-        self.manual_backward(loss_g)
-        if (batch_idx + 1) % self.grad_accum == 0:
-            opt_g.step(); opt_g.zero_grad()
+      # ======================================================
+      #  STAGE-1 : STFT のみ  (step < warmup_steps)
+      # ======================================================
+      if step < self.warmup_steps:
+          # ---- G update (STFTのみ) ----
+          loss_g_total = (self.hparams.lambda_mag * loss_mag +
+                          self.hparams.lambda_sc  * loss_sc)
+          loss_g = loss_g_total / self.grad_accum
+          self.manual_backward(loss_g)
+          if (batch_idx + 1) % self.grad_accum == 0:
+              opt_g.step(); opt_g.zero_grad()
 
-        # D は更新しない
-        if (batch_idx + 1) % self.grad_accum == 0:
-            self.log_dict({
-                "stage": 0,
-                "loss_g": loss_g_total,
-                "loss_mag": loss_mag,
-                "loss_sc": loss_sc,
-            }, prog_bar=True, on_step=True)
-        return  # ← ここで終了
-    # ======================================================
-    #  STAGE-2 : GAN + FM + STFT
-    # ======================================================
+          # D は更新しない
+          if (batch_idx + 1) % self.grad_accum == 0:
+              self.log_dict({
+                  "stage": 0,
+                  "loss_g": loss_g_total,
+                 "loss_mag": loss_mag,
+                 "loss_sc": loss_sc,
+              }, prog_bar=True, on_step=True)
+          return  # ← ここで終了
+      # ======================================================
+      #  STAGE-2 : GAN + FM + STFT
+      # ======================================================
 
-    # ---- Discriminator update (同じ処理) ----
-    wav_fake_det = wav_fake.detach()
-    wav_fake_c_det = wav_fake_det[..., :cut_len]
-    rl_mpd, _ = self.disc_mpd(wav_real_c.unsqueeze(1))
-    rl_msd, _ = self.disc_msd(wav_real_c.unsqueeze(1))
-    fk_mpd, _ = self.disc_mpd(wav_fake_c_det.unsqueeze(1))
-    fk_msd, _ = self.disc_msd(wav_fake_c_det.unsqueeze(1))
-    loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
-    self.manual_backward(loss_d)
-    if (batch_idx + 1) % self.grad_accum == 0:
-        opt_d.step(); opt_d.zero_grad()
+      # ---- Discriminator update (同じ処理) ----
+      wav_fake_det = wav_fake.detach()
+      wav_fake_c_det = wav_fake_det[..., :cut_len]
+      rl_mpd, _ = self.disc_mpd(wav_real_c.unsqueeze(1))
+      rl_msd, _ = self.disc_msd(wav_real_c.unsqueeze(1))
+      fk_mpd, _ = self.disc_mpd(wav_fake_c_det.unsqueeze(1))
+      fk_msd, _ = self.disc_msd(wav_fake_c_det.unsqueeze(1))
+      loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
+      self.manual_backward(loss_d)
+      if (batch_idx + 1) % self.grad_accum == 0:
+          opt_d.step(); opt_d.zero_grad()
 
-    # ---- Generator adversarial + FM ----
-    fk_mpd, fk_feat_mpd = self.disc_mpd(wav_fake_c.unsqueeze(1))
-    fk_msd, fk_feat_msd = self.disc_msd(wav_fake_c.unsqueeze(1))
-    loss_adv = self._adv_g(fk_mpd) + self._adv_g(fk_msd)
-    _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
-    _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
-    loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
+      # ---- Generator adversarial + FM ----
+      fk_mpd, fk_feat_mpd = self.disc_mpd(wav_fake_c.unsqueeze(1))
+      fk_msd, fk_feat_msd = self.disc_msd(wav_fake_c.unsqueeze(1))
+      loss_adv = self._adv_g(fk_mpd) + self._adv_g(fk_msd)
+      _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
+      _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
+      loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
 
-    # ---- 最終 G 損失 ----
-    loss_g_total = (self.adv_scale * loss_adv +
-                    self.hparams.lambda_fm  * loss_fm +
-                    self.hparams.lambda_mag * loss_mag +
-                    self.hparams.lambda_sc  * loss_sc)
-    loss_g = loss_g_total / self.grad_accum
-    self.manual_backward(loss_g)
-    if (batch_idx + 1) % self.grad_accum == 0:
-        opt_g.step(); opt_g.zero_grad()
+      # ---- 最終 G 損失 ----
+      loss_g_total = (self.adv_scale * loss_adv +
+                      self.hparams.lambda_fm  * loss_fm +
+                      self.hparams.lambda_mag * loss_mag +
+                      self.hparams.lambda_sc  * loss_sc)
+      loss_g = loss_g_total / self.grad_accum
+      self.manual_backward(loss_g)
+      if (batch_idx + 1) % self.grad_accum == 0:
+          opt_g.step(); opt_g.zero_grad()
 
-    if (batch_idx + 1) % self.grad_accum == 0:
-        self.log_dict({
-            "stage": 1,
-            "loss_d": loss_d * self.grad_accum,
-            "loss_g": loss_g_total,
-            "loss_adv": loss_adv,
-            "loss_fm": loss_fm,
-            "loss_mag": loss_mag,
-            "loss_sc": loss_sc,
-        }, prog_bar=True, on_step=True)
+      if (batch_idx + 1) % self.grad_accum == 0:
+          self.log_dict({
+              "stage": 1,
+             "loss_d": loss_d * self.grad_accum,
+             "loss_g": loss_g_total,
+             "loss_adv": loss_adv,
+             "loss_fm": loss_fm,
+             "loss_mag": loss_mag,
+             "loss_sc": loss_sc,
+          }, prog_bar=True, on_step=True)
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
