@@ -13,6 +13,12 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from vcdataset import VCWaveDataset, data_processing
 from solver import VCSystem
 
+import warnings
+# ---- Suppress noisy framework warnings ----
+warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
+warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
+warnings.filterwarnings("ignore", message="The number of training batches.*")
+
 ################################################################################
 #  Training entry point                                                        #
 ################################################################################
