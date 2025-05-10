@@ -21,8 +21,8 @@ def train(cfg):
     # ---------------- Dataset & Dataloader ----------------
     stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)  # (mean,std)
 
-    train_ds = VCWaveDataset(cfg["train_csv"], stats, target_sr=cfg.get("sr", 16_000))
-    val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000))
+    train_ds = VCWaveDataset(cfg["train_csv"], stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
+    val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
 
     train_dl = DataLoader(
         train_ds,
@@ -73,6 +73,8 @@ def train(cfg):
         max_epochs=cfg.get("max_epochs", 500),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.get("gpus", 1),
+        precision="16-mixed",
+        accumulate_grad_batchs=4,
         default_root_dir=cfg["work_dir"],
         logger=tb_logger,
         callbacks=[ckpt_cb],

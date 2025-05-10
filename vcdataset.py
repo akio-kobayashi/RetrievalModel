@@ -6,33 +6,35 @@ import torch
 from torch.utils.data import Dataset
 import torchaudio
 import torchaudio.transforms as T
-import torch.nn.functional as F
 
-
+# ------------------------------------------------------------
+#  Dataset                                                    
+# ------------------------------------------------------------
 class VCWaveDataset(Dataset):
-    """Dataset that yields (hubert, pitch, wav_real).
+    """Return (hubert, pitch, wav) with optional random cropping.
 
-    CSV file must contain columns:
-        hubert : path to .pt tensor  (keys: 'hubert', 'log_f0')
-        wave   : path to wav/flac/etc audio file
-
-    Args
-    ----
-    csv_path:
-        Path to CSV listing sample pairs.
-    stats_tensor:
-        Tensor with shape (2,) holding global mean, std of *output wave*.
-        Used to normalise waveform on load:  (wav - mean) / std.
-    target_sr:
-        Waveform will be resampled to this rate if necessary.
+    Parameters
+    ----------
+    csv_path : str | Path
+        CSV containing columns `hubert` (tensor pt) and `wave` (audio).
+    stats_tensor : {"mean": float, "std": float}
+        Global waveform mean/std for normalisation.
+    target_sr : int
+        Resample audio to this rate.
+    hop : int
+        Samples per HuBERT frame (16 kHz → 320).
+    max_sec : float | None
+        Crop length in seconds. None disables cropping.
     """
 
     def __init__(
         self,
         csv_path: str | Path,
-        stats_tensor: torch.Tensor,
+        stats_tensor: Dict[str, float],
         target_sr: int = 16_000,
-    ):
+        hop: int = 320,
+        max_sec: Optional[float] = 2.0,
+    ) -> None:
         self.rows: List[Dict[str, str]] = []
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -41,16 +43,17 @@ class VCWaveDataset(Dataset):
                     raise ValueError("CSV must have 'hubert' and 'wave' columns")
                 self.rows.append(r)
 
-        self.mean = stats_tensor['mean']
-        self.std = stats_tensor['std']
+        self.mean = float(stats_tensor["mean"])
+        self.std = float(stats_tensor["std"]) + 1e-9
         self.target_sr = target_sr
+        self.hop = hop
+        self.max_samples = int(max_sec * target_sr) if max_sec else None
         self._resampler: Optional[T.Resample] = None
 
-    # ------------------------------------------------------------
     def __len__(self):
         return len(self.rows)
 
-    # ------------------------------------------------------------
+    # --------------------------------------------------------
     def _get_resampler(self, orig_sr: int):
         if orig_sr == self.target_sr:
             return None
@@ -58,93 +61,74 @@ class VCWaveDataset(Dataset):
             self._resampler = T.Resample(orig_sr, self.target_sr)
         return self._resampler
 
-    # ------------------------------------------------------------
+    # --------------------------------------------------------
     def __getitem__(self, idx: int):
         row = self.rows[idx]
 
-        # -------- HuBERT + pitch tensor --------
+        # HuBERT & pitch
         pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
-        if "hubert" not in pt or "log_f0" not in pt:
-            raise KeyError("Tensor file must contain 'hubert' and 'log_f0' keys")
-        hubert: torch.Tensor = pt["hubert"].float()         # (T,D=768)
-        pitch: torch.Tensor = pt["log_f0"].float()           # (T,)
+        hubert: torch.Tensor = pt["hubert"].float()  # (T,D)
+        pitch:  torch.Tensor = pt["log_f0"].float()  # (T,)
 
-        # -------- waveform --------
+        # Waveform
         wav, sr = torchaudio.load(row["wave"])
+        if wav.size(0) > 1:
+            wav = wav.mean(0, keepdim=True)  # mono
         resampler = self._get_resampler(sr)
         if resampler is not None:
             wav = resampler(wav)
-        wav = (wav - self.mean) / (self.std + 1e-9)          # normalise
+        wav = wav.squeeze(0)
 
-        return hubert, pitch, wav.squeeze(0)  # wav: (N,)
+        # Random crop
+        if self.max_samples and wav.size(0) > self.max_samples:
+            start = torch.randint(0, wav.size(0) - self.max_samples, (1,)).item()
+            end   = start + self.max_samples
+            wav   = wav[start:end]
+            t0, t1 = start // self.hop, end // self.hop
+            hubert = hubert[t0:t1]
+            pitch  = pitch[t0:t1]
 
+        # Normalise
+        wav = (wav - self.mean) / self.std
+
+        return hubert, pitch, wav
 
 # ------------------------------------------------------------
-#  Collate function                                            
+#  Collate                                                    
 # ------------------------------------------------------------
 
 def data_processing(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
-    """Pad variable-length sequences and stack into a batch.
-
-    Returns
-    -------
-    hubert_batch : (B, T_h_max, D)
-    pitch_batch  : (B, T_h_max)
-    wav_batch    : (B, N_wav_max)
-    """
-
-    B = len(batch)
     huberts, pitches, waves = zip(*batch)
-
-    # time lengths
-    th = [h.size(0) for h in huberts]
-    twav = [w.size(0) for w in waves]
-    T_h_max = max(th)
-    N_wav_max = max(twav)
-
+    B = len(batch)
+    T_max = max(h.size(0) for h in huberts)
+    N_max = max(w.size(0) for w in waves)
     D = huberts[0].size(1)
 
-    h_pad = torch.zeros(B, T_h_max, D, dtype=huberts[0].dtype)
-    p_pad = torch.zeros(B, T_h_max, dtype=pitches[0].dtype)
-    w_pad = torch.zeros(B, N_wav_max, dtype=waves[0].dtype)
+    h_pad = torch.zeros(B, T_max, D)
+    p_pad = torch.zeros(B, T_max)
+    w_pad = torch.zeros(B, N_max)
 
-    for i in range(B):
-        h_pad[i, : th[i]] = huberts[i]
-        p_pad[i, : th[i]] = pitches[i]
-        w_pad[i, : twav[i]] = waves[i]
+    for i, (h, p, w) in enumerate(batch):
+        h_pad[i, :h.size(0)] = h
+        p_pad[i, :p.size(0)] = p
+        w_pad[i, :w.size(0)] = w
 
     return h_pad, p_pad, w_pad
 
-import argparse
-from pathlib import Path
-import torch
-from torch.utils.data import DataLoader
-
-def run_test(csv_path: Path, stats_path: Path, batch_size: int, sr: int):
-    stats = torch.load(stats_path, map_location="cpu", weights_only=True)  # {"mean": float, "std": float}
-    ds = VCWaveDataset(csv_path, stats, target_sr=sr)
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=data_processing)
-
-    hub, pit, wav = next(iter(dl))
-    print("\n=== Batch Shapes ===")
-    print(f"hubert : {hub.shape}")
-    print(f"pitch  : {pit.shape}")
-    print(f"wave   : {wav.shape}")
-
-    # simple sanity check: mean/std close to 0/1 after normalisation
-    wav_mean = wav.mean().item()
-    wav_std = wav.std().item()
-    print("\n=== Wave Normalisation Check ===")
-    print(f"mean ≈ 0 → {wav_mean:+.4f}")
-    print(f"std  ≈ 1 → {wav_std:+.4f}")
-
-
+# ------------------------------------------------------------
+#  Stand‑alone test                                           
+# ------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Quick test for VCWaveDataset & collate function")
-    parser.add_argument("--csv", type=Path, help="path to CSV file")
-    parser.add_argument("--stats", type=Path, help="path to stats pt file (mean/std)")
-    parser.add_argument("--batch", type=int, default=4, help="batch size for test")
-    parser.add_argument("--sr", type=int, default=16000, help="target sampling rate")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv", required=True)
+    parser.add_argument("--stats", required=True)
+    parser.add_argument("--batch", type=int, default=4)
+    parser.add_argument("--sr", type=int, default=16000)
     args = parser.parse_args()
 
-    run_test(args.csv, args.stats, args.batch, args.sr)
+    stats = torch.load(args.stats, map_location="cpu", weights_only=True)
+    ds = VCWaveDataset(args.csv, stats, target_sr=args.sr)
+    dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, collate_fn=data_processing)
+    h, p, w = next(iter(dl))
+    print("Shapes:", h.shape, p.shape, w.shape)
