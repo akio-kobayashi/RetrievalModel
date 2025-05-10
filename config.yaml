@@ -12,9 +12,10 @@ stats_tensor: stats.pt    # (mean, std) を格納した .pt
 # ────────────────────────────────
 #  データローダ
 # ────────────────────────────────
-batch_size:  4
+batch_size:  2
 num_workers: 4
-max_sec: 2
+max_sec: 1.0
+grad_accum: 8
 
 # ────────────────────────────────
 #  サンプリング・HuBERT 設定

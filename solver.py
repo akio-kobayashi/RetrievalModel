@@ -49,10 +49,12 @@ class VCSystem(pl.LightningModule):
         lambda_sc: float = 1.0,
         sched_gamma: float = 0.5,
         sched_step: int = 200,
+        grad_accum: int = 1,
     ):
         super().__init__()
         self.save_hyperparameters()
         self.automatic_optimization = False
+        self.grad_accum = max(1, grad_accum)
 
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
@@ -87,20 +89,21 @@ class VCSystem(pl.LightningModule):
         hub, pit, wav_real = batch
         opt_g, opt_d = self.optimizers()
 
-        # ---- Discriminator update ----
+        # ---- Discriminator update (grad‑accum aware) ----
         wav_fake = self.gen(hub, pit).detach()
         cut_len = min(wav_real.size(-1), wav_fake.size(-1))
         wav_real_c = wav_real[..., :cut_len]
         wav_fake_c = wav_fake[..., :cut_len]
 
-        opt_d.zero_grad()
         rl_mpd, _ = self.disc_mpd(wav_real_c.unsqueeze(1))
         rl_msd, _ = self.disc_msd(wav_real_c.unsqueeze(1))
         fk_mpd, _ = self.disc_mpd(wav_fake_c.unsqueeze(1))
         fk_msd, _ = self.disc_msd(wav_fake_c.unsqueeze(1))
-        loss_d = self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)
+        loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
+
         self.manual_backward(loss_d)
-        opt_d.step()
+        if (batch_idx + 1) % self.grad_accum == 0:
+            opt_d.step(); opt_d.zero_grad()
 
         # ---- Generator update ----
         wav_fake = self.gen(hub, pit)
@@ -114,20 +117,23 @@ class VCSystem(pl.LightningModule):
         loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
         loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
 
-        loss_g = loss_adv + self.hparams.lambda_fm * loss_fm + self.hparams.lambda_mag * loss_mag + self.hparams.lambda_sc * loss_sc
+        loss_g_total = loss_adv + self.hparams.lambda_fm * loss_fm + self.hparams.lambda_mag * loss_mag + self.hparams.lambda_sc * loss_sc
+        loss_g = loss_g_total / self.grad_accum
 
-        opt_g.zero_grad()
         self.manual_backward(loss_g)
-        opt_g.step()
+        if (batch_idx + 1) % self.grad_accum == 0:
+            opt_g.step(); opt_g.zero_grad()
 
-        self.log_dict({
-            "loss_d": loss_d,
-            "loss_g": loss_g,
-            "loss_adv": loss_adv,
-            "loss_fm": loss_fm,
-            "loss_mag": loss_mag,
-            "loss_sc": loss_sc,
-        }, prog_bar=True, on_step=True)
+        # logging (un‑scaled values)
+        if (batch_idx + 1) % self.grad_accum == 0:
+            self.log_dict({
+                "loss_d": loss_d * self.grad_accum,
+                "loss_g": loss_g_total,
+                "loss_adv": loss_adv,
+                "loss_fm": loss_fm,
+                "loss_mag": loss_mag,
+                "loss_sc": loss_sc,
+            }, prog_bar=True, on_step=True)
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):

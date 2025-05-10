@@ -59,6 +59,7 @@ def train(cfg):
         lambda_sc   = cfg.get("lambda_sc",   1.0),
         sched_gamma = cfg.get("sched_gamma", 0.5),
         sched_step  = cfg.get("sched_step",  200),
+        grad_accum  = cfg.get("grad_accum", 1),
     )
 
     # ---------------- Checkpoint callback ----------------
@@ -84,6 +85,7 @@ def train(cfg):
         logger=tb_logger,
         callbacks=[ckpt_cb],
         profiler="simple",
+        check_val_every_n_epoch = cfg.get("check_val_every_n_epoch", 10),
     )
 
     trainer.fit(model, train_dl, val_dl)
