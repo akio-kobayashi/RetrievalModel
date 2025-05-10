@@ -124,7 +124,10 @@ class VCSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
       hub, pit, wav_real = batch
       wav_fake = self.gen(hub, pit)
-      mag, sc = self.stft_loss(wav_real, wav_fake)
+      min_len = min(wav_real.size(-1), wav_fake.size(-1))
+      wav_real = wav_real[..., :min_len]
+      wav_fake = wav_fake[..., :min_len]
+      mag, sc  = self.stft_loss(wav_real, wav_fake)
       self.log_dict({'val_mag': mag, 'val_sc': sc}, prog_bar=True, sync_dist=True)
 
     # ---------------- optimizers & schedulers ----------------
