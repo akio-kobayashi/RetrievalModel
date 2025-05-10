@@ -86,11 +86,12 @@ def train(cfg):
 ################################################################################
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train RVC-style VC model")
-    parser.add_argument("--config", type=str, default="config.yaml", help="Path to YAML config file")
-    args = parser.parse_args()
+  torch.set_float32_matmul_precision('high')
+  parser = argparse.ArgumentParser(description="Train RVC-style VC model")
+  parser.add_argument("--config", type=str, default="config.yaml", help="Path to YAML config file")
+  args = parser.parse_args()
 
-    with open(args.config, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-
-    train(cfg)
+  with open(args.config, "r", encoding="utf-8") as f:
+      cfg = yaml.safe_load(f)
+      
+  train(cfg)

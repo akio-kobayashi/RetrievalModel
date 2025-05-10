@@ -120,6 +120,13 @@ class VCSystem(pl.LightningModule):
             "loss_sc": loss_sc,
         }, prog_bar=True, on_step=True, logger=True)
 
+    @torch.no_grad()
+    def validation_step(self, batch, batch_idx):
+      hub, pit, wav_real = batch
+      wav_fake = self.gen(hub, pit)
+      mag, sc = self.stft_loss(wav_real, wav_fake)
+      self.log_dict({'val_mag': mag, 'val_sc': sc}, prog_bar=True, sync_dist=True)
+
     # ---------------- optimizers & schedulers ----------------
     def configure_optimizers(self):
         opt_g = torch.optim.AdamW(self.gen.parameters(), lr=self.hparams.lr_g, betas=(0.8, 0.99))
