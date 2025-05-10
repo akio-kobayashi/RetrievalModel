@@ -14,9 +14,9 @@ stats_tensor: stats.pt    # (mean, std) を格納した .pt
 # ────────────────────────────────
 batch_size:  2
 num_workers: 4
-max_sec: 1.0
+max_sec: 2.0
 grad_accum: 8
-warmup_steps: 5000
+warmup_steps: 10000
 adv_scale: 1.0
 
 # ────────────────────────────────
