@@ -57,6 +57,7 @@ def train(cfg):
 
     # ---------------- Checkpoint callback ----------------
     ckpt_cb = ModelCheckpoint(
+        dirpath=cfg["ckpt_dir"],
         monitor="loss_g/epoch",  # define in validation_epoch_end if needed
         save_last=True,
         save_top_k=1,
@@ -72,6 +73,7 @@ def train(cfg):
         max_epochs=cfg.get("max_epochs", 500),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.get("gpus", 1),
+        default_root_dir=cfg["work_dir"],
         logger=tb_logger,
         callbacks=[ckpt_cb],
         profiler="simple",
