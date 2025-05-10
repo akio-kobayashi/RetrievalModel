@@ -40,10 +40,10 @@ def split_csv(
 
 def main():
     ap = argparse.ArgumentParser(description="Split dataset CSV into train/val")
-    ap.add_argument("src", type=Path, help="input CSV file")
-    ap.add_argument("out_dir", type=Path, help="output directory")
-    ap.add_argument("ratio", type=float, default=0.9, help="train split ratio")
-    ap.add_argument("seed", type=int, default=42, help="shuffle seed")
+    ap.add_argument("--src", type=Path, help="input CSV file")
+    ap.add_argument("--out_dir", type=Path, default='./', help="output directory")
+    ap.add_argument("--ratio", type=float, default=0.9, help="train split ratio")
+    ap.add_argument("--seed", type=int, default=42, help="shuffle seed")
     args = ap.parse_args()
 
     split_csv(args.src, args.out_dir, args.ratio, args.seed)

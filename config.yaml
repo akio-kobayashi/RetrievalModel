@@ -7,7 +7,7 @@
 # ────────────────────────────────
 train_csv:  train.csv          # 学習用 CSV
 val_csv:    val.csv            # 検証用 CSV
-stats_tensor: stats/wave_stats.pt    # (mean, std) を格納した .pt
+stats_tensor: stats.pt    # (mean, std) を格納した .pt
 
 # ────────────────────────────────
 #  データローダ
