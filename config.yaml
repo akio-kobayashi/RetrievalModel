@@ -28,8 +28,8 @@ hop:  320          # HuBERT 20 ms → 16 kHz で 320 サンプル
 # ────────────────────────────────
 #  モデル・損失ハイパーパラメータ
 # ────────────────────────────────
-lr_g: 0.0002       # Generator 学習率
-lr_d: 0.0002       # Discriminator 学習率
+lr_g: 0.0001       # Generator 学習率
+lr_d: 0.0001       # Discriminator 学習率
 
 lambda_fm:  2.0    # Feature-Matching 重み
 lambda_mag: 1.0    # STFT magnitude L1

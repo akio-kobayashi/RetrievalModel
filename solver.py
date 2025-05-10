@@ -11,7 +11,8 @@ from model import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
 #  Multi‑Resolution STFT Loss                                 
 # ------------------------------------------------------------
 class MRSTFTLoss(nn.Module):
-    def __init__(self, fft_sizes=(1024, 2048, 512), hop_sizes=(120, 240, 50), win_lengths=(600, 1200, 240)):
+    #def __init__(self, fft_sizes=(1024, 2048, 512), hop_sizes=(120, 240, 50), win_lengths=(600, 1200, 240)):
+    def __init__(self, fft_sizes=(2048, 1024, 512, 256), hop_sizes=(512, 256, 128, 64), win_lengths=(1200, 600, 240, 120)):
         super().__init__()
         self.fft_sizes = fft_sizes
         self.hop_sizes = hop_sizes
