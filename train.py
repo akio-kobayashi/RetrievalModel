@@ -60,6 +60,8 @@ def train(cfg):
         sched_gamma = cfg.get("sched_gamma", 0.5),
         sched_step  = cfg.get("sched_step",  200),
         grad_accum  = cfg.get("grad_accum", 1),
+        warmup_steps= cfg.get("warmup_steps", 5000),
+        adv_scale   = cfg.get("adv_scale", 1.0), 
     )
 
     # ---------------- Checkpoint callback ----------------
