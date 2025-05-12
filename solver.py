@@ -64,6 +64,10 @@ class VCSystem(pl.LightningModule):
         self.adv_scale = adv_scale
         self.max_norm = max_norm
 
+        self.register_buffer("mag_ema", torch.tensor(0.0))
+        self.register_buffer("sc_ema",  torch.tensor(0.0))
+        self.ema_beta = 0.9         # ← 0.9〜0.98 が推奨
+
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
@@ -109,8 +113,18 @@ class VCSystem(pl.LightningModule):
       wav_real_c = wav_real[..., :cut_len]
       wav_fake_c = wav_fake[..., :cut_len]
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
-      loss_mag /= self.grad_accum       # 
-      loss_sc  /= self.grad_accum       # 
+      #loss_mag /= self.grad_accum       # 
+      #loss_sc  /= self.grad_accum       # 
+      with torch.no_grad():
+        self.mag_ema = self.ema_beta * self.mag_ema + (1-self.ema_beta) * loss_mag
+        self.sc_ema  = self.ema_beta * self.sc_ema  + (1-self.ema_beta) * loss_sc
+
+      loss_mag = self.mag_ema / (1 - self.ema_beta ** (step+1))
+      loss_sc  = self.sc_ema  / (1 - self.ema_beta ** (step+1))
+      
+      scale = min(1.0, self.global_step / 2_000)
+      lambda_mag_eff = self.hparams.lambda_mag * scale
+      lambda_sc_eff = self.hparams.lambda_sc * scale
 
       # ======================================================
       #  STAGE-1 : STFT のみ  (step < warmup_steps)
@@ -119,9 +133,6 @@ class VCSystem(pl.LightningModule):
           # ---- G update (STFTのみ) ----
           #loss_g_total = (self.hparams.lambda_mag * loss_mag +
           #                self.hparams.lambda_sc  * loss_sc)
-          scale = min(1.0, self.global_step / 2_000)
-          lambda_mag_eff = self.hparams.lambda_mag * scale
-          lambda_sc_eff = self.hparams.lambda_sc * scale
           loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
           loss_g = loss_g_total / self.grad_accum
           self.manual_backward(loss_g)
