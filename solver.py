@@ -101,9 +101,9 @@ class VCSystem(pl.LightningModule):
 
     # ---------------- training ----------------
     def training_step(self, batch, batch_idx):
+      step = int(self.global_step)
       hub, pit, wav_real = batch
       opt_g, opt_d = self.optimizers()
-      step = self.global_step
 
       # ------------- Generator forward -------------
       #wav_fake = self.gen(hub, pit)
@@ -115,6 +115,20 @@ class VCSystem(pl.LightningModule):
 
       wav_real_c = wav_real[..., :cut_len]
       wav_fake_c = wav_fake[..., :cut_len]
+
+      # STAGE-0: MSEのみ step < mse_steps
+      if step < self.mse_steps:
+          loss_g = F.mse_loss(wav_fake_c, wav_real_c)
+          self.manual_backward(loss_g)
+          total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
+          self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
+          if (batch_idx + 1) % self.grad_accum == 0:
+            torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
+            opt_g.step(); opt_g.zero_grad()
+            self.log("phase", 0, on_step=True)
+            self.log("loss_mse", loss_g * self.grad_accum, on_step=True)
+          return
+      
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
@@ -138,6 +152,8 @@ class VCSystem(pl.LightningModule):
           loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
           loss_g = loss_g_total / self.grad_accum
           self.manual_backward(loss_g)
+          total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
+          self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)          
           if (batch_idx + 1) % self.grad_accum == 0:
               torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
               opt_g.step(); opt_g.zero_grad()
@@ -163,7 +179,12 @@ class VCSystem(pl.LightningModule):
       fk_mpd, _ = self.disc_mpd(wav_fake_c_det.unsqueeze(1))
       fk_msd, _ = self.disc_msd(wav_fake_c_det.unsqueeze(1))
       loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
-      self.manual_backward(loss_d)
+      self.manual_backward(loss_d)   
+      total_norm_d = torch.nn.utils.clip_grad_norm_(
+          list(self.disc_mpd.parameters()) + list(self.disc_msd.parameters()),
+          float('inf'),
+      )
+      self.log("grad_norm/d", total_norm_d, on_step=True, prog_bar=False)
       if (batch_idx + 1) % self.grad_accum == 0:
           torch.nn.utils.clip_grad_norm_(self.disc_mpd.parameters(), self.max_norm)
           torch.nn.utils.clip_grad_norm_(self.disc_msd.parameters(), self.max_norm)
@@ -188,6 +209,8 @@ class VCSystem(pl.LightningModule):
                       lambda_sc_eff * loss_sc)
       loss_g = loss_g_total / self.grad_accum
       self.manual_backward(loss_g)
+      total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
+      self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)  
       if (batch_idx + 1) % self.grad_accum == 0:
           torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
           opt_g.step(); opt_g.zero_grad()

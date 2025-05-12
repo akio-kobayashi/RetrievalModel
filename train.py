@@ -61,6 +61,7 @@ def train(cfg):
         sched_step  = cfg.get("sched_step",  200),
         grad_accum  = cfg.get("grad_accum", 1),
         warmup_steps= cfg.get("warmup_steps", 5000),
+        mse_steps   = cfg.get("mse_steps", 2000),
         adv_scale   = cfg.get("adv_scale", 1.0), 
         max_norm    = cfg.get("max_norm", 5.0),
     )
