@@ -118,7 +118,7 @@ class VCSystem(pl.LightningModule):
 
       # STAGE-0: MSEのみ step < mse_steps
       if step < self.mse_steps:
-          loss_g = F.mse_loss(wav_fake_c, wav_real_c)
+          loss_g = F.smooth_mse_loss(wav_fake_c, wav_real_c, beta=1.0)
           self.manual_backward(loss_g)
           total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
           self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
