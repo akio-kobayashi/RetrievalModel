@@ -129,36 +129,46 @@ class VCSystem(pl.LightningModule):
       # STAGE-0: MSEのみ step < mse_steps
       if step < self.mse_steps:
           # 1) Compute Smooth-L1 loss
-         loss_mse = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
-         # 2) Backward
-         self.manual_backward(loss_mse)
+          loss_mse = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
+          # 2) Backward
+          self.manual_backward(loss_mse)
 
-         # 3) Log raw gradient norm before clipping
-         total_norm_g = torch.nn.utils.clip_grad_norm_(
-             self.gen.parameters(), float('inf')
+          # 3) Log raw gradient norm before clipping
+          total_norm_g = torch.nn.utils.clip_grad_norm_(
+              self.gen.parameters(), float('inf')
           )
-         self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
+          self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
 
-         # 4) Gradient accumulation step
-         if (batch_idx + 1) % self.grad_accum == 0:
-           # a) Optimizer step
-           opt_g.step()
+          # 4) Gradient accumulation step
+          if (batch_idx + 1) % self.grad_accum == 0:
+              # a) Optimizer step
+              opt_g.step()
 
-           # b) Clip to max_norm and zero_grad
-           torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.max_norm)
-           opt_g.zero_grad()
+              # b) Clip to max_norm and zero_grad
+              torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.max_norm)
+              opt_g.zero_grad()
 
-           # c) Compute and log parameter update magnitude
-           name, p = next(self.gen.named_parameters())
-           delta = (p - self._prev_w[name].to(p.device)).abs().mean()
-           self._prev_w[name] = p.clone().detach()
-           self.log("param_update_mean", delta, on_step=True, prog_bar=False)
+              # c) Compute and log parameter update magnitude & ratios
+              name, p = next(self.gen.named_parameters())
+              delta = (p - self._prev_w[name].to(p.device)).abs().mean()
+              # d) Compute weight norm and update ratio
+              weight_norm = p.abs().mean().clamp_min(1e-8)
+              update_ratio = delta / weight_norm
 
-         # 5) Log phase and scaled loss
-         self.log("phase", 0, on_step=True)
-         self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
+              # e) Cache current weight for next step
+              self._prev_w[name] = p.clone().detach()
 
-         return
+              # f) Log update stats
+              self.log("param_update_mean", delta, on_step=True, prog_bar=False)
+              self.log("weight_norm/g",     weight_norm,   on_step=True, prog_bar=False)
+              self.log("update_ratio/g",    update_ratio,  on_step=True, prog_bar=False)
+
+          # 5) Log phase and scaled loss
+          self.log("phase",    0,        on_step=True)
+          self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
+
+          return
+
       
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
