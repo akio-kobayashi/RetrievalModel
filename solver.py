@@ -29,7 +29,8 @@ class MRSTFTLoss(nn.Module):
             X, Y = self.stft(x, fft, hop, win), self.stft(y, fft, hop, win)
             magX, magY = torch.abs(X), torch.abs(Y)
             magY = magY.clamp_min(1.0e-3)
-            mag_loss += F.l1_loss(magX, magY)
+            #mag_loss += F.l1_loss(torch.log(magX+1.0e-3), torch.log(magY+1.0e-3))
+            mag_loss += F.smooth_l1_loss(torch.log(magX+1.0e-3), torch.log(magY+1.0e-3), beta=1.0)
             sc_loss  += torch.mean((magY - magX) ** 2 / (magY ** 2 + 1e-4))
         n = len(self.fft_sizes)
         return mag_loss / n, sc_loss / n
@@ -53,6 +54,7 @@ class VCSystem(pl.LightningModule):
         sched_step: int = 200,
         grad_accum: int = 1,
         warmup_steps: int = 5_000,
+        mse_steps: int = 2_000,
         adv_scale: float = 1.0,
         max_norm: float = 5.0,
     ):
@@ -61,6 +63,7 @@ class VCSystem(pl.LightningModule):
         self.automatic_optimization = False
         self.grad_accum = max(1, grad_accum)
         self.warmup_steps = warmup_steps
+        self.mse_steps = mse_steps
         self.adv_scale = adv_scale
         self.max_norm = max_norm
 
@@ -121,7 +124,7 @@ class VCSystem(pl.LightningModule):
       #loss_mag = self.mag_ema / (1 - self.ema_beta ** (step+1))
       #loss_sc  = self.sc_ema  / (1 - self.ema_beta ** (step+1))
 
-      scale = min(1.0, self.global_step / 2_000)
+      scale = min(1.0, self.global_step / 4_000)
       lambda_mag_eff = self.hparams.lambda_mag * scale
       lambda_sc_eff = self.hparams.lambda_sc * scale
 
