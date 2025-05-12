@@ -129,7 +129,7 @@ class VCSystem(pl.LightningModule):
       # STAGE-0: MSEのみ step < mse_steps
       if step < self.mse_steps:
           # 1) Compute Smooth-L1 loss
-          loss_mse = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
+          loss_mse = F.l1_loss(wav_fake_c, wav_real_c)
           # 2) Backward
           self.manual_backward(loss_mse)
 
@@ -168,8 +168,11 @@ class VCSystem(pl.LightningModule):
           self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
-
-      
+      if step < self.mse_steps and batch_idx == 0:
+          print(f"step={step}, loss_mse={loss_mse.item():.6f}")
+          print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
+          print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
+          
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
