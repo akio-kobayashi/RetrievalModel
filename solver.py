@@ -76,9 +76,14 @@ class VCSystem(pl.LightningModule):
         self.disc_msd = MultiScaleDiscriminator()
         self.stft_loss = MRSTFTLoss()
 
-        # 前ステップのパラメータをキャッシュする dict
-        self._prev_w: dict[str, torch.Tensor] = {
-            n: p.clone().detach() for n, p in self.gen.named_parameters()
+        # 重み更新差分キャッシュは on_train_start で初期化
+        self._prev_w: dict[str, torch.Tensor] = {}
+
+    def on_train_start(self) -> None:
+        # モデルがすでに適切な device に載った後に呼ばれます
+        self._prev_w = {
+            name: param.clone().detach()
+            for name, param in self.gen.named_parameters()
         }
 
     # ---------------- helper losses ----------------
@@ -123,24 +128,37 @@ class VCSystem(pl.LightningModule):
 
       # STAGE-0: MSEのみ step < mse_steps
       if step < self.mse_steps:
-          loss_g = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
-          self.manual_backward(loss_g)
-          total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
-          self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
-          if (batch_idx + 1) % self.grad_accum == 0:
-      #      torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
-      #      opt_g.step(); opt_g.zero_grad()
-            opt_g.step()
-            with torch.no_grad():
-                name, p = next(self.gen.named_parameters())
-                delta = (p - self._prev_w[name]).abs().mean()
-                self._prev_w[name] = p.clone()
-            self.log("param_update_mean", delta, on_step=True, prog_bar=False)
-            torch.nn.utils.clip_grad_norm_(self.gen_parameters(), max_norm=self.max_norm)
-            opt_g.zero_grad()
-          self.log("phase", 0, on_step=True)
-          self.log("loss_mse", loss_g * self.grad_accum, on_step=True)
-          return
+          # 1) Compute Smooth-L1 loss
+         loss_mse = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
+         # 2) Backward
+         self.manual_backward(loss_mse)
+
+         # 3) Log raw gradient norm before clipping
+         total_norm_g = torch.nn.utils.clip_grad_norm_(
+             self.gen.parameters(), float('inf')
+          )
+         self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
+
+         # 4) Gradient accumulation step
+         if (batch_idx + 1) % self.grad_accum == 0:
+           # a) Optimizer step
+           opt_g.step()
+
+           # b) Clip to max_norm and zero_grad
+           torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.max_norm)
+           opt_g.zero_grad()
+
+           # c) Compute and log parameter update magnitude
+           name, p = next(self.gen.named_parameters())
+           delta = (p - self._prev_w[name].to(p.device)).abs().mean()
+           self._prev_w[name] = p.clone().detach()
+           self.log("param_update_mean", delta, on_step=True, prog_bar=False)
+
+         # 5) Log phase and scaled loss
+         self.log("phase", 0, on_step=True)
+         self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
+
+         return
       
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
