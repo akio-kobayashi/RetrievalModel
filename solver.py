@@ -60,7 +60,7 @@ class VCSystem(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self.automatic_optimization = True
+        self.automatic_optimization = False
         self.grad_accum = max(1, grad_accum)
         self.warmup_steps = warmup_steps
         self.mse_steps = mse_steps
@@ -75,6 +75,11 @@ class VCSystem(pl.LightningModule):
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
         self.stft_loss = MRSTFTLoss()
+
+        # 前ステップのパラメータをキャッシュする dict
+        self._prev_w: dict[str, torch.Tensor] = {
+            n: p.clone().detach() for n, p in self.gen.named_parameters()
+        }
 
     # ---------------- helper losses ----------------
     @staticmethod
@@ -103,7 +108,7 @@ class VCSystem(pl.LightningModule):
     def training_step(self, batch, batch_idx):
       step = int(self.global_step)
       hub, pit, wav_real = batch
-      #opt_g, opt_d = self.optimizers()
+      opt_g, opt_d = self.optimizers()
 
       # ------------- Generator forward -------------
       #wav_fake = self.gen(hub, pit)
@@ -118,24 +123,24 @@ class VCSystem(pl.LightningModule):
 
       # STAGE-0: MSEのみ step < mse_steps
       if step < self.mse_steps:
-      #    loss_g = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
-      #    self.manual_backward(loss_g)
-      #    total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
-      #    self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
-      #    if (batch_idx + 1) % self.grad_accum == 0:
+          loss_g = F.smooth_l1_loss(wav_fake_c, wav_real_c, beta=1.0)
+          self.manual_backward(loss_g)
+          total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
+          self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
+          if (batch_idx + 1) % self.grad_accum == 0:
       #      torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
       #      opt_g.step(); opt_g.zero_grad()
-      #      self.log("phase", 0, on_step=True)
-      #      self.log("loss_mse", loss_g * self.grad_accum, on_step=True)
-      #    return
-        loss_mse = F.smooth_l1_loss(wav_fake_c, wav_real_c)
-        total_norm_g = torch.nn.utils.clip_grad_norm_(
-            self.gen.parameters(), self.max_norm
-        )
-        self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)
-        self.log("phase", 0, on_step=True)
-        self.log("loss_mse", loss_mse, on_step=True, on_epoch=True)
-        return loss_mse
+            opt_g.step()
+            with torch.no_grad():
+                name, p = next(self.gen.named_parameters())
+                delta = (p - self._prev_w[name]).abs().mean()
+                self._prev_w[name] = p.clone()
+            self.log("param_update_mean", delta, on_step=True, prog_bar=False)
+            torch.nn.utils.clip_grad_norm_(self.gen_parameters(), max_norm=self.max_norm)
+            opt_g.zero_grad()
+          self.log("phase", 0, on_step=True)
+          self.log("loss_mse", loss_g * self.grad_accum, on_step=True)
+          return
       
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
