@@ -99,19 +99,30 @@ class VCSystem(pl.LightningModule):
       step = self.global_step
 
       # ------------- Generator forward -------------
+      #wav_fake = self.gen(hub, pit)
+      #cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
       wav_fake = self.gen(hub, pit)
-      cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
+      HOP_MAX=512
+      cut_len = min(wav_real.size(-1), wav_fake.size(-1))
+      cut_len = (cut_len // HOP_MAX) *HOP_MAX
+
       wav_real_c = wav_real[..., :cut_len]
       wav_fake_c = wav_fake[..., :cut_len]
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
+      loss_mag /= self.grad_accum       # 
+      loss_sc  /= self.grad_accum       # 
 
       # ======================================================
       #  STAGE-1 : STFT のみ  (step < warmup_steps)
       # ======================================================
       if step < self.warmup_steps:
           # ---- G update (STFTのみ) ----
-          loss_g_total = (self.hparams.lambda_mag * loss_mag +
-                          self.hparams.lambda_sc  * loss_sc)
+          #loss_g_total = (self.hparams.lambda_mag * loss_mag +
+          #                self.hparams.lambda_sc  * loss_sc)
+          scale = min(1.0, self.global_step / 2_000)
+          lambda_mag_eff = self.hparams.lambda_mag * scale
+          lambda_sc_eff = self.hparames.lambda_sc * scale
+          loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
           loss_g = loss_g_total / self.grad_accum
           self.manual_backward(loss_g)
           if (batch_idx + 1) % self.grad_accum == 0:
@@ -154,10 +165,14 @@ class VCSystem(pl.LightningModule):
       loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
 
       # ---- 最終 G 損失 ----
+      #loss_g_total = (self.adv_scale * loss_adv +
+      #                self.hparams.lambda_fm  * loss_fm +
+      #                self.hparams.lambda_mag * loss_mag +
+      #                self.hparams.lambda_sc  * loss_sc)
       loss_g_total = (self.adv_scale * loss_adv +
-                      self.hparams.lambda_fm  * loss_fm +
-                      self.hparams.lambda_mag * loss_mag +
-                      self.hparams.lambda_sc  * loss_sc)
+                      self.hparams.lambda_fm * loss_fm +
+                      lambda_mag_eff * loss_mag +
+                      lambda_sc_eff * loss_sc)
       loss_g = loss_g_total / self.grad_accum
       self.manual_backward(loss_g)
       if (batch_idx + 1) % self.grad_accum == 0:

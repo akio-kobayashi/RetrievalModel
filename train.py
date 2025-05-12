@@ -62,6 +62,7 @@ def train(cfg):
         grad_accum  = cfg.get("grad_accum", 1),
         warmup_steps= cfg.get("warmup_steps", 5000),
         adv_scale   = cfg.get("adv_scale", 1.0), 
+        max_norm    = cfg.get("max_norm", 5.0),
     )
 
     # ---------------- Checkpoint callback ----------------
