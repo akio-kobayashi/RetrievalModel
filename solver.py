@@ -121,7 +121,7 @@ class VCSystem(pl.LightningModule):
           #                self.hparams.lambda_sc  * loss_sc)
           scale = min(1.0, self.global_step / 2_000)
           lambda_mag_eff = self.hparams.lambda_mag * scale
-          lambda_sc_eff = self.hparames.lambda_sc * scale
+          lambda_sc_eff = self.hparams.lambda_sc * scale
           loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
           loss_g = loss_g_total / self.grad_accum
           self.manual_backward(loss_g)
