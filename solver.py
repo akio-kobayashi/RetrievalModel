@@ -28,8 +28,9 @@ class MRSTFTLoss(nn.Module):
         for fft, hop, win in zip(self.fft_sizes, self.hop_sizes, self.win_lengths):
             X, Y = self.stft(x, fft, hop, win), self.stft(y, fft, hop, win)
             magX, magY = torch.abs(X), torch.abs(Y)
+            magY = magY.clamp_min(1.0e-3)
             mag_loss += F.l1_loss(magX, magY)
-            sc_loss  += torch.mean((magY - magX) ** 2 / (magY ** 2 + 1e-7))
+            sc_loss  += torch.mean((magY - magX) ** 2 / (magY ** 2 + 1e-4))
         n = len(self.fft_sizes)
         return mag_loss / n, sc_loss / n
 
@@ -53,6 +54,7 @@ class VCSystem(pl.LightningModule):
         grad_accum: int = 1,
         warmup_steps: int = 5_000,
         adv_scale: float = 1.0,
+        max_norm: float = 5.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -60,6 +62,7 @@ class VCSystem(pl.LightningModule):
         self.grad_accum = max(1, grad_accum)
         self.warmup_steps = warmup_steps
         self.adv_scale = adv_scale
+        self.max_norm = max_norm
 
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
@@ -112,6 +115,7 @@ class VCSystem(pl.LightningModule):
           loss_g = loss_g_total / self.grad_accum
           self.manual_backward(loss_g)
           if (batch_idx + 1) % self.grad_accum == 0:
+              torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
               opt_g.step(); opt_g.zero_grad()
 
           # D は更新しない
@@ -137,6 +141,8 @@ class VCSystem(pl.LightningModule):
       loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
       self.manual_backward(loss_d)
       if (batch_idx + 1) % self.grad_accum == 0:
+          torch.nn.utils.clip_grad_norm_(self.disc_mpd.parameters(), self.max_norm)
+          torch.nn.utils.clip_grad_norm_(self.disc_msd.parameters(), self.max_norm)
           opt_d.step(); opt_d.zero_grad()
 
       # ---- Generator adversarial + FM ----
@@ -155,6 +161,7 @@ class VCSystem(pl.LightningModule):
       loss_g = loss_g_total / self.grad_accum
       self.manual_backward(loss_g)
       if (batch_idx + 1) % self.grad_accum == 0:
+          torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
           opt_g.step(); opt_g.zero_grad()
 
       if (batch_idx + 1) % self.grad_accum == 0:
@@ -225,6 +232,8 @@ class FineTuneVC(VCSystem):
         fk_msd, _ = self.disc_msd(wav_fake_c.unsqueeze(1))
         loss_d = self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)
         self.manual_backward(loss_d)
+        torch.nn.utils.clip_grad_norm_(self.disc_mpd.parameters(), self.max_norm)
+        torch.nn.utils.clip_grad_norm_(self.disc_msd.parameters(), self.max_norm)
         opt_d.step()
 
         # ---- G update ----
@@ -246,6 +255,7 @@ class FineTuneVC(VCSystem):
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
+        torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
         opt_g.step()
 
         self.log_dict({
@@ -282,7 +292,7 @@ class _SoftDTW(nn.Module):
                 r2 = -R[:, i, j - 1] / self.gamma
                 rmax = torch.max(torch.stack([r0, r1, r2], dim=-1), dim=-1).values
                 rsum = torch.exp(r0 - rmax) + torch.exp(r1 - rmax) + torch.exp(r2 - rmax)
-                softmin = -self.gamma * (torch.log(rsum) + rmax)
+                softmin = -self.gamma * (torch.log(rsum + 1.0e-9) + rmax)
                 R[:, i, j] = d[:, j - 1] + softmin
         loss = R[:, N, M]
         if self.normalize:

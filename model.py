@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import weight_norm  # ← 追加
+from torch.nn.utils.parametrizations import spectral_norm
 
 ###############################################################################
 #  Posterior Encoder – HuBERT (+ Pitch) → latent z                           #
@@ -118,14 +119,25 @@ class PeriodDiscriminator(nn.Module):
         ks = [5, 3, 3, 3, 3]
         for i in range(len(ks)):
             seq.append(
-                weight_norm(
+                #weight_norm(
+                #    nn.Conv2d(
+                #        chs[i], chs[i + 1], (ks[i], 1), stride=(3 if i == 0 else 1, 1), padding=((ks[i] - 1) // 2, 0)
+                #    )
+                #)
+                spectral_norm(
                     nn.Conv2d(
-                        chs[i], chs[i + 1], (ks[i], 1), stride=(3 if i == 0 else 1, 1), padding=((ks[i] - 1) // 2, 0)
+                        chs[i], chs[i+1],
+                        (ks[i], 1),
+                        stride=(3 if i ==0 else 1, 1),
+                        padding=((ks[i]-1)//2, 0), 
                     )
                 )
             )
             seq.append(nn.LeakyReLU(0.1))
-        seq.append(weight_norm(nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))))
+        #seq.append(weight_norm(nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))))
+        seq.append(spectral_norm(
+            nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))
+        ))
         self.convs = nn.ModuleList(seq)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
