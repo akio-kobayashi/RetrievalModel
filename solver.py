@@ -119,9 +119,13 @@ class VCSystem(pl.LightningModule):
       #wav_fake = self.gen(hub, pit)
       #cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
       wav_fake = self.gen(hub, pit)
-      HOP_MAX=512
-      cut_len = min(wav_real.size(-1), wav_fake.size(-1))
-      cut_len = (cut_len // HOP_MAX) *HOP_MAX
+      #HOP_MAX=512
+      hop = self.hparams.hop
+      num_frames = hub.size(1)
+      cut_len = num_frames * hop
+      cut_len = min(cut_len, wav_real.size(-1), wav_fake.size(-1))
+      #cut_len = min(wav_real.size(-1), wav_fake.size(-1))
+      #cut_len = (cut_len // HOP_MAX) *HOP_MAX
 
       wav_real_c = wav_real[..., :cut_len]
       wav_fake_c = wav_fake[..., :cut_len]
