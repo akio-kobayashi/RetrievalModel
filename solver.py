@@ -168,6 +168,7 @@ class VCSystem(pl.LightningModule):
           self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
+      
       if step < self.mse_steps and batch_idx == 0:
           print(f"step={step}, loss_mse={loss_mse.item():.6f}")
           print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
@@ -223,7 +224,9 @@ class VCSystem(pl.LightningModule):
       fk_mpd, _ = self.disc_mpd(wav_fake_c_det.unsqueeze(1))
       fk_msd, _ = self.disc_msd(wav_fake_c_det.unsqueeze(1))
       loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
-      self.manual_backward(loss_d)   
+      if batch_idx % self.grad_accum == 0:
+        opt_d.zero_grad()                  # ← サイクル開始時に一度だけクリア
+      self.manual_backward(loss_d)      
       total_norm_d = torch.nn.utils.clip_grad_norm_(
           list(self.disc_mpd.parameters()) + list(self.disc_msd.parameters()),
           float('inf'),
@@ -232,7 +235,8 @@ class VCSystem(pl.LightningModule):
       if (batch_idx + 1) % self.grad_accum == 0:
           torch.nn.utils.clip_grad_norm_(self.disc_mpd.parameters(), self.max_norm)
           torch.nn.utils.clip_grad_norm_(self.disc_msd.parameters(), self.max_norm)
-          opt_d.step(); opt_d.zero_grad()
+          opt_d.step();
+          #opt_d.zero_grad()
 
       # ---- Generator adversarial + FM ----
       fk_mpd, fk_feat_mpd = self.disc_mpd(wav_fake_c.unsqueeze(1))
@@ -252,12 +256,15 @@ class VCSystem(pl.LightningModule):
                       lambda_mag_eff * loss_mag +
                       lambda_sc_eff * loss_sc)
       loss_g = loss_g_total / self.grad_accum
+      if batch_idx % self.grad_accum == 0:
+        opt_g.zero_grad()      
       self.manual_backward(loss_g)
       total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
       self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)  
       if (batch_idx + 1) % self.grad_accum == 0:
           torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
-          opt_g.step(); opt_g.zero_grad()
+          opt_g.step();
+          #opt_g.zero_grad()
 
       if (batch_idx + 1) % self.grad_accum == 0:
           self.log_dict({
