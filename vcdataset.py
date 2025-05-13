@@ -45,6 +45,21 @@ class VCWaveDataset(Dataset):
 
         self.mean = float(stats_tensor["mean"])
         self.std = float(stats_tensor["std"]) + 1e-9
+
+        # Global stats for pitch normalization (compute if missing)
+        if "pitch_mean" in stats_tensor and "pitch_std" in stats_tensor:
+            self.pitch_mean = float(stats_tensor["pitch_mean"])
+            self.pitch_std  = float(stats_tensor["pitch_std"]) + 1e-9
+        else:
+            # load all log_f0 to compute global mean/std
+            f0_list = []
+            for row in self.rows:
+                pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
+                f0_list.append(pt["log_f0"].float())
+            cat = torch.cat(f0_list)
+            self.pitch_mean = cat.mean().item()
+            self.pitch_std  = cat.std(unbiased=False).item() + 1e-9
+
         self.target_sr = target_sr
         self.hop = hop
         self.max_samples = int(max_sec * target_sr) if max_sec else None
@@ -70,6 +85,9 @@ class VCWaveDataset(Dataset):
         hubert: torch.Tensor = pt["hubert"].float()  # (T,D)
         pitch:  torch.Tensor = pt["log_f0"].float()  # (T,)
 
+        # Normalize pitch globally
+        pitch_norm = (pitch - self.pitch_mean) / self.pitch_std
+
         # Waveform
         wav, sr = torchaudio.load(row["wave"])
         if wav.size(0) > 1:
@@ -92,7 +110,7 @@ class VCWaveDataset(Dataset):
                 t0 = torch.randint(0, num_frames - max_frames + 1, (1,)).item()
                 t1 = t0 + max_frames
                 hubert = hubert[t0:t1]
-                pitch  = pitch[t0:t1]
+                pitch_norm  = pitch_norm[t0:t1]
                 # 対応する波形サンプルの start/end を計算
                 start = t0 * self.hop
                 end   = start + self.max_samples
@@ -102,7 +120,7 @@ class VCWaveDataset(Dataset):
         local_std = wav.std(unbiased=False) + 1.0e-9
         wav_norm = (wav - local_mean)/local_std
 
-        return hubert, pitch, wav_norm
+        return hubert, pitch_norm, wav_norm
 
 # ------------------------------------------------------------
 #  Collate                                                    
