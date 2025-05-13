@@ -80,14 +80,29 @@ class VCWaveDataset(Dataset):
         wav = wav.squeeze(0)
 
         # Random crop
+        #if self.max_samples and wav.size(0) > self.max_samples:
+        #    start = torch.randint(0, wav.size(0) - self.max_samples, (1,)).item()
+        #    end   = start + self.max_samples
+        #    wav   = wav[start:end]
+        #    t0, t1 = start // self.hop, end // self.hop
+        #    hubert = hubert[t0:t1]
+        #    pitch  = pitch[t0:t1]
+        # Random crop（HuBERT フレーム単位 → 波形サンプル長に対応）
         if self.max_samples and wav.size(0) > self.max_samples:
-            start = torch.randint(0, wav.size(0) - self.max_samples, (1,)).item()
-            end   = start + self.max_samples
-            wav   = wav[start:end]
-            t0, t1 = start // self.hop, end // self.hop
-            hubert = hubert[t0:t1]
-            pitch  = pitch[t0:t1]
-
+            # フレームでの最大長
+            max_frames = self.max_samples // self.hop
+            num_frames = hubert.size(0)
+            if num_frames > max_frames:
+                # HuBERT フレームをランダム選択
+                t0 = torch.randint(0, num_frames - max_frames + 1, (1,)).item()
+                t1 = t0 + max_frames
+                hubert = hubert[t0:t1]
+                pitch  = pitch[t0:t1]
+                # 対応する波形サンプルの start/end を計算
+                start = t0 * self.hop
+                end   = start + self.max_samples
+                wav   = wav[start:end]
+                
         # Normalise
         wav = (wav - self.mean) / self.std
 
