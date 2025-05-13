@@ -116,11 +116,11 @@ class VCWaveDataset(Dataset):
                 end   = start + self.max_samples
                 wav   = wav[start:end]
         # ローカル正規化
-        local_mean = wav.mean()
-        local_std = wav.std(unbiased=False) + 1.0e-9
-        wav_norm = (wav - local_mean)/local_std
+        #local_mean = wav.mean()
+        #local_std = wav.std(unbiased=False) + 1.0e-9
+        #wav_norm = (wav - local_mean)/local_std
 
-        return hubert, pitch_norm, wav_norm
+        return hubert, pitch_norm, wav
 
 # ------------------------------------------------------------
 #  Collate                                                    

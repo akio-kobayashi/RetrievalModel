@@ -212,7 +212,7 @@ class VCSystem(pl.LightningModule):
           # D は更新しない
           if (batch_idx + 1) % self.grad_accum == 0:
               self.log_dict({
-                  "stage": 0,
+                  "stage": 0.,
                   "loss_g": loss_g_total,
                  "loss_mag": loss_mag,
                  "loss_sc": loss_sc,
@@ -275,7 +275,7 @@ class VCSystem(pl.LightningModule):
 
       if (batch_idx + 1) % self.grad_accum == 0:
           self.log_dict({
-              "stage": 1,
+              "stage": 1.,
              "loss_d": loss_d * self.grad_accum,
              "loss_g": loss_g_total,
              "loss_adv": loss_adv,
