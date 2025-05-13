@@ -142,10 +142,8 @@ class VCSystem(pl.LightningModule):
           # 4) Gradient accumulation step
           if (batch_idx + 1) % self.grad_accum == 0:
               # a) Optimizer step
-              opt_g.step()
-
-              # b) Clip to max_norm and zero_grad
               torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.max_norm)
+              opt_g.step()
               opt_g.zero_grad()
 
               # c) Compute and log parameter update magnitude & ratios
@@ -196,12 +194,15 @@ class VCSystem(pl.LightningModule):
           #                self.hparams.lambda_sc  * loss_sc)
           loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
           loss_g = loss_g_total / self.grad_accum
+          if batch_idx % self.grad_accum == 0:
+            opt_g.zero_grad()                
           self.manual_backward(loss_g)
           total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
           self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)          
           if (batch_idx + 1) % self.grad_accum == 0:
               torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
-              opt_g.step(); opt_g.zero_grad()
+              opt_g.step();
+              #opt_g.zero_grad()
 
           # D は更新しない
           if (batch_idx + 1) % self.grad_accum == 0:
