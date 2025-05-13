@@ -102,14 +102,14 @@ class VCWaveDataset(Dataset):
         local_std = wav.std(unbiased=False) + 1.0e-9
         wav_norm = (wav - local_mean)/local_std
 
-        return hubert, pitch, wav_norm, local_mean, local_std
+        return hubert, pitch, wav_norm
 
 # ------------------------------------------------------------
 #  Collate                                                    
 # ------------------------------------------------------------
 
 def data_processing(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
-    huberts, pitches, waves, _, _ = zip(*batch)
+    huberts, pitches, waves = zip(*batch)
     B = len(batch)
     T_max = max(h.size(0) for h in huberts)
     N_max = max(w.size(0) for w in waves)
