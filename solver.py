@@ -166,7 +166,7 @@ class VCSystem(pl.LightningModule):
               self.log("update_ratio/g",    update_ratio,  on_step=True, prog_bar=False)
 
           # 5) Log phase and scaled loss
-          self.log("phase",    0,        on_step=True)
+          self.log("phase",    0.0,        on_step=True)
           self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
