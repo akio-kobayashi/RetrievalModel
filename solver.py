@@ -171,14 +171,15 @@ class VCSystem(pl.LightningModule):
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
       
-      if step < self.mse_steps and batch_idx == 0:
-          print(f"step={step}, loss_mse={loss_mse.item():.6f}")
-          print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
-          print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
+      #if step < self.mse_steps and batch_idx == 0:
+      #    print(f"step={step}, loss_mse={loss_mse.item():.6f}")
+      #    print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
+      #    print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
           
       loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
+      self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
       #with torch.no_grad():
       #  self.mag_ema = self.ema_beta * self.mag_ema + (1-self.ema_beta) * loss_mag
       #  self.sc_ema  = self.ema_beta * self.sc_ema  + (1-self.ema_beta) * loss_sc
@@ -216,6 +217,7 @@ class VCSystem(pl.LightningModule):
                  "loss_mag": loss_mag,
                  "loss_sc": loss_sc,
               }, prog_bar=True, on_step=True)
+              self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
           return  # ← ここで終了
       # ======================================================
       #  STAGE-2 : GAN + FM + STFT
