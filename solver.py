@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 from model import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
+from stft_loss import MultiResolutionSTFTLoss
 
 # ------------------------------------------------------------
 #  Multi‑Resolution STFT Loss                                 
@@ -74,8 +75,16 @@ class VCSystem(pl.LightningModule):
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
-        self.stft_loss = MRSTFTLoss()
-
+        #self.stft_loss = MRSTFTLoss()
+        self.stft_loss = MultiResolutionSTFTLoss(
+            fft_sizes  = [2048, 1024, 512, 256],
+            hop_sizes  = [512, 256, 128,  64],
+            win_lengths= [1200, 600, 240, 120],
+            window     = "hann_window",
+            factor_sc  = self.hparams.lambda_sc,   # λ_sc
+            factor_mag = self.hparams.lambda_mag,  # λ_mag
+            factor_cmp = 0.0            
+        )
         # 重み更新差分キャッシュは on_train_start で初期化
         self._prev_w: dict[str, torch.Tensor] = {}
 
@@ -176,7 +185,7 @@ class VCSystem(pl.LightningModule):
       #    print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
       #    print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
           
-      loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
+      loss_mag, loss_sc = self.stft_loss(wav_fake_c, wav_real_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
       self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
