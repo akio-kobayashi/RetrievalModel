@@ -9,34 +9,6 @@ from model import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
 from stft_loss import MultiResolutionSTFTLoss
 
 # ------------------------------------------------------------
-#  Multi‑Resolution STFT Loss                                 
-# ------------------------------------------------------------
-class MRSTFTLoss(nn.Module):
-    #def __init__(self, fft_sizes=(1024, 2048, 512), hop_sizes=(120, 240, 50), win_lengths=(600, 1200, 240)):
-    def __init__(self, fft_sizes=(2048, 1024, 512, 256), hop_sizes=(512, 256, 128, 64), win_lengths=(1200, 600, 240, 120)):
-        super().__init__()
-        self.fft_sizes = fft_sizes
-        self.hop_sizes = hop_sizes
-        self.win_lengths = win_lengths
-        self.register_buffer("window", torch.hann_window(2048), persistent=False)
-
-    def stft(self, x, fft, hop, win):
-        w = self.window[:win].to(x.device)
-        return torch.stft(x, fft, hop, win, window=w, return_complex=True)
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        mag_loss = sc_loss = 0.0
-        for fft, hop, win in zip(self.fft_sizes, self.hop_sizes, self.win_lengths):
-            X, Y = self.stft(x, fft, hop, win), self.stft(y, fft, hop, win)
-            magX, magY = torch.abs(X), torch.abs(Y)
-            magY = magY.clamp_min(1.0e-3)
-            #mag_loss += F.l1_loss(torch.log(magX+1.0e-3), torch.log(magY+1.0e-3))
-            mag_loss += F.smooth_l1_loss(torch.log(magX+1.0e-3), torch.log(magY+1.0e-3), beta=1.0)
-            sc_loss  += torch.mean((magY - magX) ** 2 / (magY ** 2 + 1e-4))
-        n = len(self.fft_sizes)
-        return mag_loss / n, sc_loss / n
-
-# ------------------------------------------------------------
 #  LightningModule                                            
 # ------------------------------------------------------------
 class VCSystem(pl.LightningModule):
@@ -68,14 +40,9 @@ class VCSystem(pl.LightningModule):
         self.adv_scale = adv_scale
         self.max_norm = max_norm
 
-        #self.register_buffer("mag_ema", torch.tensor(0.0))
-        #self.register_buffer("sc_ema",  torch.tensor(0.0))
-        #self.ema_beta = 0.9         # ← 0.9〜0.98 が推奨
-
         self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
-        #self.stft_loss = MRSTFTLoss()
         self.stft_loss = MultiResolutionSTFTLoss(
             fft_sizes  = [2048, 1024, 512, 256],
             hop_sizes  = [512, 256, 128,  64],
@@ -123,18 +90,15 @@ class VCSystem(pl.LightningModule):
       step = int(self.global_step)
       hub, pit, wav_real = batch
       opt_g, opt_d = self.optimizers()
+      if batch_idx % self.grad_accum == 0:
+          opt_g.zero_grad(); opt_d.zero_grad()
 
       # ------------- Generator forward -------------
-      #wav_fake = self.gen(hub, pit)
-      #cut_len  = min(wav_real.size(-1), wav_fake.size(-1))
       wav_fake = self.gen(hub, pit)
-      #HOP_MAX=512
       hop = self.hparams.hop
       num_frames = hub.size(1)
       cut_len = num_frames * hop
       cut_len = min(cut_len, wav_real.size(-1), wav_fake.size(-1))
-      #cut_len = min(wav_real.size(-1), wav_fake.size(-1))
-      #cut_len = (cut_len // HOP_MAX) *HOP_MAX
 
       wav_real_c = wav_real[..., :cut_len]
       wav_fake_c = wav_fake[..., :cut_len]
@@ -157,7 +121,6 @@ class VCSystem(pl.LightningModule):
               # a) Optimizer step
               torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.max_norm)
               opt_g.step()
-              opt_g.zero_grad()
 
               # c) Compute and log parameter update magnitude & ratios
               name, p = next(self.gen.named_parameters())
@@ -179,25 +142,11 @@ class VCSystem(pl.LightningModule):
           self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
-      
-      #if step < self.mse_steps and batch_idx == 0:
-      #    print(f"step={step}, loss_mse={loss_mse.item():.6f}")
-      #    print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
-      #    print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
-          
+         
       loss_sc, loss_mag, _ = self.stft_loss(wav_fake_c, wav_real_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
       self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
-      #with torch.no_grad():
-      #  self.mag_ema = self.ema_beta * self.mag_ema + (1-self.ema_beta) * loss_mag
-      #  self.sc_ema  = self.ema_beta * self.sc_ema  + (1-self.ema_beta) * loss_sc
-      #loss_mag = self.mag_ema / (1 - self.ema_beta ** (step+1))
-      #loss_sc  = self.sc_ema  / (1 - self.ema_beta ** (step+1))
-
-      #scale = min(1.0, self.global_step / 4_000)
-      #lambda_mag_eff = self.hparams.lambda_mag * scale
-      #lambda_sc_eff = self.hparams.lambda_sc * scale
 
       # ======================================================
       #  STAGE-1 : STFT のみ  (step < warmup_steps)
@@ -206,15 +155,13 @@ class VCSystem(pl.LightningModule):
           # ---- G update (STFTのみ) ----
           loss_g_total = (loss_mag + loss_sc)          
           loss_g = loss_g_total / self.grad_accum
-          if batch_idx % self.grad_accum == 0:
-            opt_g.zero_grad()                
+        
           self.manual_backward(loss_g)
           total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
           self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)          
           if (batch_idx + 1) % self.grad_accum == 0:
               torch.nn.utils.clip_grad_norm_(self.gen.parameters(), max_norm=self.max_norm)            
               opt_g.step();
-              #opt_g.zero_grad()
 
           # D は更新しない
           if (batch_idx + 1) % self.grad_accum == 0:
@@ -238,8 +185,6 @@ class VCSystem(pl.LightningModule):
       fk_mpd, _ = self.disc_mpd(wav_fake_c_det.unsqueeze(1))
       fk_msd, _ = self.disc_msd(wav_fake_c_det.unsqueeze(1))
       loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
-      if batch_idx % self.grad_accum == 0:
-        opt_d.zero_grad()                  # ← サイクル開始時に一度だけクリア
       self.manual_backward(loss_d)      
       total_norm_d = torch.nn.utils.clip_grad_norm_(
           list(self.disc_mpd.parameters()) + list(self.disc_msd.parameters()),
@@ -261,17 +206,10 @@ class VCSystem(pl.LightningModule):
       loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
 
       # ---- 最終 G 損失 ----
-      #loss_g_total = (self.adv_scale * loss_adv +
-      #                self.hparams.lambda_fm  * loss_fm +
-      #                self.hparams.lambda_mag * loss_mag +
-      #                self.hparams.lambda_sc  * loss_sc)
       loss_g_total = (self.adv_scale * loss_adv +
                       self.hparams.lambda_fm * loss_fm +
-                      lambda_mag_eff * loss_mag +
-                      lambda_sc_eff * loss_sc)
-      loss_g = loss_g_total / self.grad_accum
-      if batch_idx % self.grad_accum == 0:
-        opt_g.zero_grad()      
+                      loss_mag + loss_sc)
+      loss_g = loss_g_total / self.grad_accum  
       self.manual_backward(loss_g)
       total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
       self.log("grad_norm/g", total_norm_g, on_step=True, prog_bar=False)  
