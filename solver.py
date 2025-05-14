@@ -195,18 +195,16 @@ class VCSystem(pl.LightningModule):
       #loss_mag = self.mag_ema / (1 - self.ema_beta ** (step+1))
       #loss_sc  = self.sc_ema  / (1 - self.ema_beta ** (step+1))
 
-      scale = min(1.0, self.global_step / 4_000)
-      lambda_mag_eff = self.hparams.lambda_mag * scale
-      lambda_sc_eff = self.hparams.lambda_sc * scale
+      #scale = min(1.0, self.global_step / 4_000)
+      #lambda_mag_eff = self.hparams.lambda_mag * scale
+      #lambda_sc_eff = self.hparams.lambda_sc * scale
 
       # ======================================================
       #  STAGE-1 : STFT のみ  (step < warmup_steps)
       # ======================================================
       if step < self.warmup_steps:
           # ---- G update (STFTのみ) ----
-          #loss_g_total = (self.hparams.lambda_mag * loss_mag +
-          #                self.hparams.lambda_sc  * loss_sc)
-          loss_g_total = (lambda_mag_eff * loss_mag + lambda_sc_eff * loss_sc)          
+          loss_g_total = (loss_mag + loss_sc)          
           loss_g = loss_g_total / self.grad_accum
           if batch_idx % self.grad_accum == 0:
             opt_g.zero_grad()                
@@ -300,7 +298,7 @@ class VCSystem(pl.LightningModule):
         cut_len = min(wav_real.size(-1), wav_fake.size(-1))
         wav_real = wav_real[..., :cut_len]
         wav_fake = wav_fake[..., :cut_len]
-        mag, sc = self.stft_loss(wav_real, wav_fake)
+        sc, mag, _ = self.stft_loss(wav_fake, wav_real)
         self.log_dict({"val_mag": mag, "val_sc": sc}, prog_bar=True)
 
     # ---------------- optimizers & schedulers ----------------
@@ -364,12 +362,11 @@ class FineTuneVC(VCSystem):
         _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
         _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
         loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
-        loss_mag, loss_sc = self.stft_loss(wav_real_c, wav_fake_c)
+        loss_sc, loss_mag, _ = self.stft_loss(wav_real_c, wav_fake_c)
         loss_dtw = self.soft_dtw(wav_real, wav_fake_full)  # align full‑length sequences
 
         loss_g = (loss_adv + self.hparams.lambda_fm * loss_fm +
-                   self.hparams.lambda_mag * loss_mag + self.hparams.lambda_sc * loss_sc +
-                   loss_dtw)
+                   loss_mag + loss_sc + loss_dtw)
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
