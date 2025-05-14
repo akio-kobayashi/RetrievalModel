@@ -13,11 +13,11 @@ stats_tensor: stats.pt    # (mean, std) を格納した .pt
 #  データローダ
 # ────────────────────────────────
 batch_size:  2
-num_workers: 4
+num_workers: 2
 max_sec: 2.0
 grad_accum: 8
-warmup_steps: 100000
-mse_epochs: 50000
+warmup_steps: 5000
+mse_steps: 0
 adv_scale: 1.0
 max_norm: 3.0
 
