@@ -185,7 +185,7 @@ class VCSystem(pl.LightningModule):
       #    print("wav_real_c[:10] :", wav_real_c[0, :10].cpu().numpy())
       #    print("wav_fake_c[:10] :", wav_fake_c[0, :10].cpu().detach().numpy())
           
-      loss_mag, loss_sc = self.stft_loss(wav_fake_c, wav_real_c)
+      loss_sc, loss_mag, _ = self.stft_loss(wav_fake_c, wav_real_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
       self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
