@@ -14,12 +14,12 @@ stats_tensor: stats.pt    # (mean, std) を格納した .pt
 # ────────────────────────────────
 batch_size:  2
 num_workers: 2
-max_sec: 2.0
+max_sec: 3.0
 grad_accum: 8
 warmup_steps: 5000
 mse_steps: 0
 adv_scale: 1.0
-max_norm: 3.0
+max_norm: 5.0
 
 # ────────────────────────────────
 #  サンプリング・HuBERT 設定
@@ -55,6 +55,7 @@ gpus:        1     # 0 → CPU / 1→ single GPU / N→ multi GPU
 work_dir: /media/akio/hdd1/rvc/models/test/logs            # Lightning の default_root_dir
 log_dir:  /media/akio/hdd1/rvc/models/test/logs/tb         # TensorBoard 保存先
 ckpt_dir: /media/akio/hdd1/rvc/models/test/logs/ckpt       # ModelCheckpoint が .ckpt を置く先
-# ModelCheckpoint は train_vc.py 内で固定：
+save_top_k: 1
+every_n_epochs: 10
 #   monitor=loss_g/epoch,  save_last: true,  save_top_k: 1,  every_n_epochs: 50
 # ============================================================

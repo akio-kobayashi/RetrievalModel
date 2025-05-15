@@ -7,6 +7,8 @@ import pytorch_lightning as pl
 
 from model import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
 from stft_loss import MultiResolutionSTFTLoss
+from transformers import get_cosine_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
 
 # ------------------------------------------------------------
 #  LightningModule                                            
@@ -246,10 +248,21 @@ class VCSystem(pl.LightningModule):
 
         sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
         sched_d = torch.optim.lr_scheduler.StepLR(opt_d, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
-
+        #total_steps = self.trainer.estimated_stepping_batches
+        #warmup_steps = self.warmup_steps
+        #sched_g = get_linear_schedule_with_warmup(
+        #    opt_g,
+        #    num_warmup_steps=warmup_steps,
+        #    num_training_steps=total_steps,
+        #)
+        #sched_d = get_linear_schedule_with_warmup(
+        #    opt_d,
+        #    num_warmup_steps=warmup_steps,
+        #    num_training_steps=total_steps,
+        #)
         return ([opt_g, opt_d], [
-            {"scheduler": sched_g, "interval": "epoch"},
-            {"scheduler": sched_d, "interval": "epoch"},
+            {"scheduler": sched_g, "interval": "step"},
+            {"scheduler": sched_d, "interval": "step"},
         ])
 
 # ============================================================

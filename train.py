@@ -71,9 +71,9 @@ def train(cfg):
         dirpath=cfg["ckpt_dir"],
         monitor="loss_g",  # define in validation_epoch_end if needed
         save_last=True,
-        save_top_k=1,
+        save_top_k=cfg.get("save_top_k", 1),
         mode="min",
-        every_n_epochs=50,
+        every_n_epochs=cfg.get("every_n_epochs", 50),
     )
 
     # ---------------- Logger ----------------
