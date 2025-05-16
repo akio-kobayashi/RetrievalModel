@@ -7,7 +7,7 @@ import torchaudio
 from tqdm import tqdm
 
 def compute_stats(csv):
-    df = pd.read_csv()
+    df = pd.read_csv(csv)
     f0_list = []
     for idx, row in df.iterrows():
         pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
