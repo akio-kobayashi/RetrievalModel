@@ -6,7 +6,7 @@ import torch
 import torchaudio
 from tqdm import tqdm
 
-def compute_statsd(csv):
+def compute_stats(csv):
     df = pd.read_csv()
     f0_list = []
     for idx, row in df.iterrows():
