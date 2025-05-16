@@ -69,11 +69,11 @@ def train(cfg):
     # ---------------- Checkpoint callback ----------------
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        monitor="loss_g",  # define in validation_epoch_end if needed
+        monitor="loss_mag_epoch",     # training_step で on_epoch=True にしているキー
         save_last=True,
-        save_top_k=cfg.get("save_top_k", 1),
+        save_top_k=3,
         mode="min",
-        every_n_epochs=cfg.get("every_n_epochs", 50),
+        every_n_epochs=1,
     )
 
     # ---------------- Logger ----------------
