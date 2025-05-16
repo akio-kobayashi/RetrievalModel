@@ -24,7 +24,7 @@ def main():
     ap.add_argument("--stats", type=str)
     args = ap.parse_args()
 
-    stats = torch.load(arg.stats, map_location="cpu", weights_only=True)  # (mean,std)
+    stats = torch.load(args.stats, map_location="cpu", weights_only=True)  # (mean,std)
 
     pitch_mean, pitch_std = compute_stats(args.csv)
     output_stats = {"mean": stats['mean'], "std": stats['std'], "pitch_mean": pitch_mean, "pitch_std": pitch_std}
