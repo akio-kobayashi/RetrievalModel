@@ -67,13 +67,15 @@ def train(cfg):
     )
 
     # ---------------- Checkpoint callback ----------------
+    steps_per_epoch = len(train_dl)
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        monitor="loss_mag_epoch",     # training_step で on_epoch=True にしているキー
-        save_last=True,
-        save_top_k=3,
+        filename="{epoch:02d}-{loss_mag_epoch:.4f}",
+        monitor="loss_mag_epoch",
         mode="min",
-        every_n_epochs=1,
+        save_top_k=3,
+        save_last=True,
+        every_n_train_steps=steps_per_epoch,   # ← 1 epoch ごとに保存
     )
 
     # ---------------- Logger ----------------
