@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
 # local modules
@@ -77,6 +77,7 @@ def train(cfg):
         save_last=True,
         every_n_train_steps=steps_per_epoch,   # ← 1 epoch ごとに保存
     )
+    lr_monitor = LearningRateMonitor(logging_interval="step")   # "epoch" でも可
 
     # ---------------- Logger ----------------
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="vc")
@@ -89,7 +90,7 @@ def train(cfg):
         precision="16-mixed",
         default_root_dir=cfg["work_dir"],
         logger=tb_logger,
-        callbacks=[ckpt_cb],
+        callbacks=[ckpt_cb, lr_monitor],
         profiler="simple",
         check_val_every_n_epoch = cfg.get("check_val_every_n_epoch", 10),
     )
