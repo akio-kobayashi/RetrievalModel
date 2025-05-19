@@ -62,14 +62,14 @@ def main(args):
     gen = load_generator(args.ckpt, device)
 
     # stats for de-normalisation (optional)
-    if args.stats is not None and args.stats.exists():
+    try:
         st = torch.load(args.stats, map_location="cpu")
         mean, std = st["mean"], st["std"]
-        use_stats = True
+        pitch_mean, pitch_std = st["pitch_mean"], st["pitch_std"]
         print(f"[info] Using mean/std = {mean:.4f}/{std:.4f} for inverse normalisation")
-    else:
-        mean = std = None
-        use_stats = False
+    except RuntimeError:
+        print('specify stats file')
+        exit(1)
 
     rows = load_rows(args.csv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -80,12 +80,11 @@ def main(args):
             tens = torch.load(r["hubert"], map_location="cpu")
             hubert: torch.Tensor = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch: torch.Tensor  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
-
+            pitch = (pitch - pitch_mean)/(pitch_std + 1.e-4)
             wav = gen(hubert, pitch).cpu().squeeze(0)  # (N,)
 
             # inverse normalisation if stats provided
-            if use_stats:
-                wav = wav * std + mean
+            wav = wav * std + mean
             wav = wav.clamp(-1.0, 1.0)
 
             out_path = args.out_dir / f"{key}_gen.wav"
