@@ -246,20 +246,12 @@ class VCSystem(pl.LightningModule):
         opt_g = torch.optim.AdamW(self.gen.parameters(), lr=self.hparams.lr_g, betas=(0.8, 0.99))
         opt_d = torch.optim.AdamW(list(self.disc_mpd.parameters()) + list(self.disc_msd.parameters()), lr=self.hparams.lr_d, betas=(0.8, 0.99))
 
-        sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
+        # w/o GAN training steps
+        total_steps  = self.trainer.estimated_stepping_batches
+        warmup_steps = self.warmup_steps        
+        sched_g = get_cosine_schedule_with_warmup(opt_g, num_warmup_steps=warmup_steps, num_training_steps = total_steps,num_cycles= 0.5)
+        #sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
         sched_d = torch.optim.lr_scheduler.StepLR(opt_d, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
-        #total_steps = self.trainer.estimated_stepping_batches
-        #warmup_steps = self.warmup_steps
-        #sched_g = get_linear_schedule_with_warmup(
-        #    opt_g,
-        #    num_warmup_steps=warmup_steps,
-        #    num_training_steps=total_steps,
-        #)
-        #sched_d = get_linear_schedule_with_warmup(
-        #    opt_d,
-        #    num_warmup_steps=warmup_steps,
-        #    num_training_steps=total_steps,
-        #)
         return ([opt_g, opt_d], [
             {"scheduler": sched_g, "interval": "step"},
             {"scheduler": sched_d, "interval": "step"},
