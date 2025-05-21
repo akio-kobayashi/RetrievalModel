@@ -249,8 +249,8 @@ class VCSystem(pl.LightningModule):
         # w/o GAN training steps
         total_steps  = self.trainer.estimated_stepping_batches
         warmup_steps = self.warmup_steps        
-        sched_g = get_cosine_schedule_with_warmup(opt_g, num_warmup_steps=warmup_steps, num_training_steps = total_steps,num_cycles= 0.5)
-        #sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
+        #sched_g = get_cosine_schedule_with_warmup(opt_g, num_warmup_steps=warmup_steps, num_training_steps = total_steps,num_cycles= 0.5)
+        sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
         sched_d = torch.optim.lr_scheduler.StepLR(opt_d, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
         return ([opt_g, opt_d], [
             {"scheduler": sched_g, "interval": "step"},
