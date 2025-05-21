@@ -53,7 +53,7 @@ class VCSystem(pl.LightningModule):
             window     = "hann_window",
             factor_sc  = self.hparams.lambda_sc,   # λ_sc
             factor_mag = self.hparams.lambda_mag,  # λ_mag
-            factor_cmp = 0.0            
+            factor_cmp = self.hparams.lambda_cmp            
         )
         # 重み更新差分キャッシュは on_train_start で初期化
         self._prev_w: dict[str, torch.Tensor] = {}
@@ -148,9 +148,10 @@ class VCSystem(pl.LightningModule):
 
       loss_wav = F.l1_loss(wav_fake_c, wav_real_c)
       loss_wav /= self.grad_accum
-      loss_sc, loss_mag, _ = self.stft_loss(wav_fake_c, wav_real_c)
+      loss_sc, loss_mag, loss_cmp = self.stft_loss(wav_fake_c, wav_real_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
+      loss_cmp /= self.grad_accum
       self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
 
       # ======================================================
@@ -175,6 +176,7 @@ class VCSystem(pl.LightningModule):
                   "loss_g": loss_g_total,
                   "loss_mag": loss_mag,
                   "loss_sc": loss_sc,
+                  "loss_cmp": loss_cmp,
                   "loss_wav": loss_wav,
               }, prog_bar=True, on_step=True)
               self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
@@ -234,6 +236,7 @@ class VCSystem(pl.LightningModule):
              "loss_fm": loss_fm,
              "loss_mag": loss_mag,
              "loss_sc": loss_sc,
+             "loss_cmp": loss_cmp,
              "loss_wav": loss_wav,
           }, prog_bar=True, on_step=True)
 
@@ -244,8 +247,8 @@ class VCSystem(pl.LightningModule):
         cut_len = min(wav_real.size(-1), wav_fake.size(-1))
         wav_real = wav_real[..., :cut_len]
         wav_fake = wav_fake[..., :cut_len]
-        sc, mag, _ = self.stft_loss(wav_fake, wav_real)
-        self.log_dict({"val_mag": mag, "val_sc": sc}, prog_bar=True)
+        sc, mag, cmp_loss = self.stft_loss(wav_fake, wav_real)
+        self.log_dict({"val_mag": mag, "val_sc": sc, "val_comp": cmp_loss}, prog_bar=True)
 
     # ---------------- optimizers & schedulers ----------------
     def configure_optimizers(self):
@@ -288,6 +291,7 @@ class FineTuneVC(VCSystem):
         cut_len = min(wav_real.size(-1), wav_fake_full.size(-1))
         wav_real_c = wav_real[..., :cut_len]
         wav_fake_c = wav_fake_full[..., :cut_len]
+        loss_wav = F.l1_loss(wav_fake_c, wav_real_c)
 
         # ---- D update ----
         opt_d.zero_grad()
@@ -311,11 +315,11 @@ class FineTuneVC(VCSystem):
         _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
         _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
         loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
-        loss_sc, loss_mag, _ = self.stft_loss(wav_real_c, wav_fake_c)
+        loss_sc, loss_mag, loss_cmp = self.stft_loss(wav_real_c, wav_fake_c)
         loss_dtw = self.soft_dtw(wav_real, wav_fake_full)  # align full‑length sequences
 
         loss_g = (loss_adv + self.hparams.lambda_fm * loss_fm +
-                   loss_mag + loss_sc + loss_dtw + self.hparams.lambda_wav * loss_wav)
+                   loss_mag + loss_sc + loss_cmp + loss_dtw + self.hparams.lambda_wav * loss_wav)
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
