@@ -25,6 +25,7 @@ class VCSystem(pl.LightningModule):
         lambda_fm: float = 2.0,
         lambda_mag: float = 1.0,
         lambda_sc: float = 1.0,
+        lambda_wav: float = 0.1,
         sched_gamma: float = 0.5,
         sched_step: int = 200,
         grad_accum: int = 1,
@@ -144,7 +145,9 @@ class VCSystem(pl.LightningModule):
           self.log("loss_mse", loss_mse * self.grad_accum, on_step=True)
           self.log("loss_mse_epoch", loss_mse, on_step=False, on_epoch=True)
           return
-         
+
+      loss_wav = F.l1_loss(wav_fake_c, wav_real_c)
+      loss_wav /= self.grad_accum
       loss_sc, loss_mag, _ = self.stft_loss(wav_fake_c, wav_real_c)
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
@@ -170,8 +173,9 @@ class VCSystem(pl.LightningModule):
               self.log_dict({
                   "stage": 0.,
                   "loss_g": loss_g_total,
-                 "loss_mag": loss_mag,
-                 "loss_sc": loss_sc,
+                  "loss_mag": loss_mag,
+                  "loss_sc": loss_sc,
+                  "loss_wav": loss_wav,
               }, prog_bar=True, on_step=True)
               self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
           return  # ← ここで終了
@@ -210,7 +214,8 @@ class VCSystem(pl.LightningModule):
       # ---- 最終 G 損失 ----
       loss_g_total = (self.adv_scale * loss_adv +
                       self.hparams.lambda_fm * loss_fm +
-                      loss_mag + loss_sc)
+                      loss_mag + loss_sc +
+                      self.hparams.lambda_wav * loss_wav)
       loss_g = loss_g_total / self.grad_accum  
       self.manual_backward(loss_g)
       total_norm_g = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), float('inf'))
@@ -229,6 +234,7 @@ class VCSystem(pl.LightningModule):
              "loss_fm": loss_fm,
              "loss_mag": loss_mag,
              "loss_sc": loss_sc,
+             "loss_wav": loss_wav,
           }, prog_bar=True, on_step=True)
 
     @torch.no_grad()
@@ -309,7 +315,7 @@ class FineTuneVC(VCSystem):
         loss_dtw = self.soft_dtw(wav_real, wav_fake_full)  # align full‑length sequences
 
         loss_g = (loss_adv + self.hparams.lambda_fm * loss_fm +
-                   loss_mag + loss_sc + loss_dtw)
+                   loss_mag + loss_sc + loss_dtw + self.hparams.lambda_wav * loss_wav)
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
@@ -324,6 +330,7 @@ class FineTuneVC(VCSystem):
             "loss_fm": loss_fm,
             "loss_mag": loss_mag,
             "loss_sc": loss_sc,
+            "loss_wav": loss_wav,
         }, prog_bar=True, on_step=True)
 
 # ------------------------------------------------------------
