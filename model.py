@@ -87,6 +87,13 @@ class Generator(nn.Module):
                             output_padding=r % 2,
                         )
                     ),
+                    nn.Conv1d(  # ローパス用Conv（depthwiseにする）
+                            ch // 2,
+                            ch // 2,
+                            kernel_size=5,
+                            padding=2,
+                            groups=ch // 2,  # depthwise conv にすることで過剰な変形を防ぐ
+                    ),
                 )
             )
             ch //= 2
