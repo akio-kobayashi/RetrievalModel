@@ -94,7 +94,7 @@ class Generator(nn.Module):
         self.post = nn.Sequential(
             nn.LeakyReLU(0.1),
             weight_norm(nn.Conv1d(ch, 1, 7, padding=3)),
-            nn.Tanh(),
+            #nn.Tanh(),
         )
 
     def forward(self, x):
