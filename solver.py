@@ -9,6 +9,7 @@ from model import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
 from stft_loss import MultiResolutionSTFTLoss
 from transformers import get_cosine_schedule_with_warmup
 from transformers import get_linear_schedule_with_warmup
+from pitch_loss import PitchLoss
 
 # ------------------------------------------------------------
 #  LightningModule                                            
@@ -27,6 +28,7 @@ class VCSystem(pl.LightningModule):
         lambda_sc: float = 1.0,
         lambda_cmp: float = 1.0,
         lambda_wav: float = 0.1,
+        lambda_pitch: float = 1.0,
         sched_gamma: float = 0.5,
         sched_step: int = 200,
         grad_accum: int = 1,
@@ -56,6 +58,7 @@ class VCSystem(pl.LightningModule):
             factor_mag = self.hparams.lambda_mag,  # λ_mag
             factor_cmp = self.hparams.lambda_cmp            
         )
+        self.pitch_loss = PitchLoss()
         # 重み更新差分キャッシュは on_train_start で初期化
         self._prev_w: dict[str, torch.Tensor] = {}
 
@@ -153,6 +156,8 @@ class VCSystem(pl.LightningModule):
       loss_mag /= self.grad_accum       # 
       loss_sc  /= self.grad_accum       # 
       loss_cmp /= self.grad_accum
+      loss_pitch = self.pitch_loss(wav_fake_c, wav_real_c)
+      loss_pitch /= self.grad_accum
       self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
 
       # ======================================================
@@ -179,6 +184,7 @@ class VCSystem(pl.LightningModule):
                   "loss_sc": loss_sc,
                   "loss_cmp": loss_cmp,
                   "loss_wav": loss_wav,
+                  "loss_pitch": loss_pitch,
               }, prog_bar=True, on_step=True)
               self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
           return  # ← ここで終了
@@ -239,6 +245,7 @@ class VCSystem(pl.LightningModule):
              "loss_sc": loss_sc,
              "loss_cmp": loss_cmp,
              "loss_wav": loss_wav,
+             "loss_pitch": loss_pitch,
           }, prog_bar=True, on_step=True)
 
     @torch.no_grad()
@@ -249,7 +256,8 @@ class VCSystem(pl.LightningModule):
         wav_real = wav_real[..., :cut_len]
         wav_fake = wav_fake[..., :cut_len]
         sc, mag, cmp_loss = self.stft_loss(wav_fake, wav_real)
-        self.log_dict({"val_mag": mag, "val_sc": sc, "val_comp": cmp_loss}, prog_bar=True)
+        loss_pitch = self.pitch_loss(wav_fake, wav_real)
+        self.log_dict({"val_mag": mag, "val_sc": sc, "val_comp": cmp_loss, "val_pitch": loss_pitch}, prog_bar=True)
 
     # ---------------- optimizers & schedulers ----------------
     def configure_optimizers(self):
@@ -316,11 +324,13 @@ class FineTuneVC(VCSystem):
         _, rl_feat_mpd = self.disc_mpd(wav_real_c.unsqueeze(1).detach())
         _, rl_feat_msd = self.disc_msd(wav_real_c.unsqueeze(1).detach())
         loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
-        loss_sc, loss_mag, loss_cmp = self.stft_loss(wav_real_c, wav_fake_c)
+        loss_sc, loss_mag, loss_cmp = self.stft_loss(wav_fake_c, wav_real_c)
+        loss_pitch = self.pitch_loss(wav_fake_c, wav_real_c)
         loss_dtw = self.soft_dtw(wav_real, wav_fake_full)  # align full‑length sequences
 
         loss_g = (loss_adv + self.hparams.lambda_fm * loss_fm +
-                   loss_mag + loss_sc + loss_cmp + loss_dtw + self.hparams.lambda_wav * loss_wav)
+                   loss_mag + loss_sc + loss_cmp + loss_dtw + 
+                   self.hparams.lambda_wav * loss_wav + self.hparams.lambda_pitch * loss_pitch)
 
         opt_g.zero_grad()
         self.manual_backward(loss_g)
