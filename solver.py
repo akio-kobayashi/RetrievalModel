@@ -48,9 +48,9 @@ class VCSystem(pl.LightningModule):
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
         self.stft_loss = MultiResolutionSTFTLoss(
-            fft_sizes  = [2048, 1024, 512, 256],
-            hop_sizes  = [512, 256, 128,  64],
-            win_lengths= [1200, 600, 240, 120],
+            fft_sizes  = [2048, 1024, 512], #[2048, 1024, 512, 256],
+            hop_sizes  = [512, 256, 128],   #[512, 256, 128,  64],
+            win_lengths= [2048, 1024, 512], #[1200, 600, 240, 120],
             window     = "hann_window",
             factor_sc  = self.hparams.lambda_sc,   # λ_sc
             factor_mag = self.hparams.lambda_mag,  # λ_mag
