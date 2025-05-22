@@ -25,6 +25,7 @@ class VCSystem(pl.LightningModule):
         lambda_fm: float = 2.0,
         lambda_mag: float = 1.0,
         lambda_sc: float = 1.0,
+        lambda_cmp: float = 1.0,
         lambda_wav: float = 0.1,
         sched_gamma: float = 0.5,
         sched_step: int = 200,

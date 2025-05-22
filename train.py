@@ -57,6 +57,7 @@ def train(cfg):
         lambda_fm   = cfg.get("lambda_fm",   2.0),
         lambda_mag  = cfg.get("lambda_mag",  1.0),
         lambda_sc   = cfg.get("lambda_sc",   1.0),
+        lambda_cmp =  cfg.get("lambda_cmp",  1.0),
         lambda_wav  = cfg.get("lambda_wav",  0.1),
         sched_gamma = cfg.get("sched_gamma", 0.5),
         sched_step  = cfg.get("sched_step",  200),
