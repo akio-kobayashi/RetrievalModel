@@ -77,15 +77,20 @@ class Generator(nn.Module):
             self.ups.append(
                 nn.Sequential(
                     nn.LeakyReLU(0.1),
-                    weight_norm(
-                        nn.ConvTranspose1d(
-                            ch,
-                            ch // 2,
-                            kernel_size=r * 2,
-                            stride=r,
-                            padding=r // 2 + r % 2,
-                            output_padding=r % 2,
-                        )
+                    #weight_norm(
+                    #    nn.ConvTranspose1d(
+                    #        ch,
+                    #        ch // 2,
+                    #        kernel_size=r * 2,
+                    #        stride=r,
+                    #        padding=r // 2 + r % 2,
+                    #        output_padding=r % 2,
+                    #    )
+                    #),
+                    nn.Upsample(
+                        scale_factor=r,
+                        mode='linear',
+                        align_corners=True
                     ),
                     nn.Conv1d(  # ローパス用Conv（depthwiseにする）
                             ch // 2,
