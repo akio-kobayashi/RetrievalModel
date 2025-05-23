@@ -89,16 +89,24 @@ class Generator(nn.Module):
                     #),
                     nn.Upsample(
                         scale_factor=r,
-                        mode='linear',
-                        align_corners=True
+                        mode='nearest',
                     ),
-                    nn.Conv1d(  # ローパス用Conv（depthwiseにする）
-                            ch // 2,
+                    weight_norm(
+                        nn.Conv1d(
+                            ch,
                             ch // 2,
                             kernel_size=5,
-                            padding=2,
-                            groups=ch // 2,  # depthwise conv にすることで過剰な変形を防ぐ
+                            padding=2
+                        )
                     ),
+                    nn.LeakyReLU(0.1),
+                    weight_norm(
+                        nn.Conv1d(  # ローパス用Conv（depthwiseにする）
+                            ch // 2,
+                            ch // 2,
+                            kernel_size=1,
+                        ),
+                    )
                 )
             )
             ch //= 2
