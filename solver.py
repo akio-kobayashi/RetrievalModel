@@ -189,7 +189,7 @@ class VCSystem(pl.LightningModule):
                   "loss_pitch": loss_pitch,
               }, prog_bar=True, on_step=True)
               self.log("loss_mag_epoch", loss_mag, on_step=False, on_epoch=True)
-          return  # ← ここで終了
+          return  {"loss_mag": loss_mag} # ← ここで終了
       # ======================================================
       #  STAGE-2 : GAN + FM + STFT
       # ======================================================
@@ -250,17 +250,23 @@ class VCSystem(pl.LightningModule):
              "loss_pitch": loss_pitch,
           }, prog_bar=True, on_step=True)
 
+    def training_epoch_end(self, outputs):
+        mag_losses = [x["loss_mag"] for x in outputs]
+        avg_loss_mag = torch.stack(mag_losses).mean()
+        self.log("loss_mag_epoch", avg_loss_mag, prog_bar=True, on_epoch=True)
+        
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        hub, pit, wav_real = batch
-        wav_fake = self.gen(hub, pit)
-        cut_len = min(wav_real.size(-1), wav_fake.size(-1))
-        wav_real = wav_real[..., :cut_len]
-        wav_fake = wav_fake[..., :cut_len]
-        sc, mag, cmp_loss = self.stft_loss(wav_fake, wav_real)
-        loss_pitch = self.pitch_loss(wav_fake, wav_real)
-        self.log_dict({"val_mag": mag, "val_sc": sc, "val_comp": cmp_loss, "val_pitch": loss_pitch}, prog_bar=True)
-
+        #hub, pit, wav_real = batch
+        #wav_fake = self.gen(hub, pit)
+        #cut_len = min(wav_real.size(-1), wav_fake.size(-1))
+        #wav_real = wav_real[..., :cut_len]
+        #wav_fake = wav_fake[..., :cut_len]
+        #sc, mag, cmp_loss = self.stft_loss(wav_fake, wav_real)
+        #loss_pitch = self.pitch_loss(wav_fake, wav_real)
+        #self.log_dict({"val_mag": mag, "val_sc": sc, "val_comp": cmp_loss, "val_pitch": loss_pitch}, prog_bar=True)
+        pass
+    
     # ---------------- optimizers & schedulers ----------------
     def configure_optimizers(self):
         opt_g = torch.optim.AdamW(self.gen.parameters(), lr=self.hparams.lr_g, betas=(0.8, 0.99))
