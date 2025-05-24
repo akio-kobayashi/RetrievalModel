@@ -30,7 +30,6 @@ def train(cfg):
     train_ds = VCWaveDataset(cfg["train_csv"], stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
     #val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
 
-    '''
     train_dl = DataLoader(
         train_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -39,8 +38,8 @@ def train(cfg):
         collate_fn=data_processing,
         pin_memory=True,
     )
-    '''
-    
+
+    '''    
     val_dl = DataLoader(
         val_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -49,7 +48,8 @@ def train(cfg):
         collate_fn=data_processing,
         pin_memory=True,
     )
-
+    '''
+    
     # ---------------- Model ----------------
     model = VCSystem(
         sr          = cfg.get("sr",          16_000),
