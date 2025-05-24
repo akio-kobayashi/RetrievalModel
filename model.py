@@ -67,7 +67,7 @@ class ResBlock(nn.Module):
 class Generator(nn.Module):
     """HiFi‑GAN like Generator (RVC v2)."""
 
-    def __init__(self, in_ch: int = 256, upsample_rates: List[int] = [10, 8, 2, 2]):
+    def __init__(self, in_ch: int = 256, upsample_rates: List[int] = [5, 2, 4, 2, 2]):
         super().__init__()
         self.pre = weight_norm(nn.Conv1d(in_ch, 512, 7, padding=3))
         ch = 512
@@ -248,7 +248,7 @@ class MultiScaleDiscriminator(nn.Module):
 ###############################################################################
 
 class RVCStyleVC(nn.Module):
-    def __init__(self, latent_ch: int = 256, upsample_rates: List[int] = [10, 8, 2, 2]):
+    def __init__(self, latent_ch: int = 256, upsample_rates: List[int] = [5, 2, 4, 2, 2]):
         super().__init__()
         self.encoder = PosteriorEncoder(latent_ch=latent_ch)
         self.generator = Generator(in_ch=latent_ch, upsample_rates=upsample_rates)
