@@ -36,6 +36,7 @@ class VCSystem(pl.LightningModule):
         mse_steps: int = 2_000,
         adv_scale: float = 1.0,
         max_norm: float = 5.0,
+        upsample_rates = [5, 2, 4, 2, 2],
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -46,7 +47,7 @@ class VCSystem(pl.LightningModule):
         self.adv_scale = adv_scale
         self.max_norm = max_norm
 
-        self.gen = RVCStyleVC()
+        self.gen = RVCStyleVC(upsample_rates=upsample_rates)
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
         self.stft_loss = MultiResolutionSTFTLoss(

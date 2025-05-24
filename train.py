@@ -67,6 +67,7 @@ def train(cfg):
         mse_steps   = cfg.get("mse_steps", 2000),
         adv_scale   = cfg.get("adv_scale", 1.0), 
         max_norm    = cfg.get("max_norm", 5.0),
+        upsample_rates = cfg.get("upsample_rates", [5, 2, 4, 2, 2]),
     )
 
     # ---------------- Checkpoint callback ----------------
