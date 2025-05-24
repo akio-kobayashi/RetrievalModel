@@ -75,7 +75,7 @@ def train(cfg):
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
         filename="{epoch:02d}-{loss_mag_epoch:.4f}",
-        monitor="loss_mag_epoch",
+        monitor="loss_mag",
         mode="min",
         save_top_k=3,
         save_last=True,
