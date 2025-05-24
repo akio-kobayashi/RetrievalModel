@@ -250,11 +250,11 @@ class VCSystem(pl.LightningModule):
              "loss_pitch": loss_pitch,
           }, prog_bar=True, on_step=True)
 
-    def training_epoch_end(self, outputs):
+    def on_training_epoch_end(self, outputs):
         mag_losses = [x["loss_mag"] for x in outputs]
         avg_loss_mag = torch.stack(mag_losses).mean()
         self.log("loss_mag_epoch", avg_loss_mag, prog_bar=True, on_epoch=True)
-        
+
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         #hub, pit, wav_real = batch
