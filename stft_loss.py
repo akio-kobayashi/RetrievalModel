@@ -42,7 +42,26 @@ class ComplexSpectralLoss(torch.nn.Module):
         _loss = F.l1_loss(torch.sign(y_real) * torch.log(1.+torch.abs(y_real)), torch.sign(x_real) * torch.log(1.+torch.abs(x_real)))
         _loss += F.l1_loss(torch.sign(y_imag) * torch.log(1.+torch.abs(y_imag)), torch.sign(x_imag) * torch.log(1.+torch.abs(x_imag)))
         return _loss
-    
+
+class ComplexSpectralConvergenceLoss(torch.nn.Module):
+    def __init__(self, eps: float = 1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x_stft: torch.Tensor, y_stft: torch.Tensor) -> torch.Tensor:
+        X_mag = torch.abs(x_stft)  # [B, F, T]
+        Y_mag = torch.abs(y_stft)
+
+        sc_num = torch.norm(Y_mag - X_mag, p='fro')
+        sc_den = torch.norm(Y_mag,      p='fro').clamp_min(self.eps)
+        sc_loss = sc_num / sc_den
+
+        log_X = torch.log1p(X_mag)
+        log_Y = torch.log1p(Y_mag)
+        mag_loss = F.l1_loss(log_X, log_Y)
+
+        return sc_loss + mag_loss
+        
 class SpectralConvergengeLoss(torch.nn.Module):
     """Spectral convergence loss module."""
 
@@ -91,8 +110,9 @@ class STFTLoss(torch.nn.Module):
         self.register_buffer("window", getattr(torch, window)(win_length))
         self.spectral_convergenge_loss = SpectralConvergengeLoss()
         self.log_stft_magnitude_loss = LogSTFTMagnitudeLoss()
-        self.complex_loss = ComplexSpectralLoss()
-
+        #self.complex_loss = ComplexSpectralLoss()
+        self.complex_loss = ComplexSpectralConvergenceLoss()
+        
     def forward(self, x, y):
         """Calculate forward propagation.
         Args:
