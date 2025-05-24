@@ -28,8 +28,9 @@ def train(cfg):
     stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)  # (mean,std)
 
     train_ds = VCWaveDataset(cfg["train_csv"], stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
-    val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
+    #val_ds   = VCWaveDataset(cfg["val_csv"],   stats, target_sr=cfg.get("sr", 16_000), max_sec=cfg.get("max_sec", 2.0))
 
+    '''
     train_dl = DataLoader(
         train_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -38,7 +39,8 @@ def train(cfg):
         collate_fn=data_processing,
         pin_memory=True,
     )
-
+    '''
+    
     val_dl = DataLoader(
         val_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -99,7 +101,7 @@ def train(cfg):
         check_val_every_n_epoch = cfg.get("check_val_every_n_epoch", 10),
     )
 
-    trainer.fit(model, train_dl, val_dl)
+    trainer.fit(model, train_dl)
 
 ################################################################################
 #  CLI                                                                         #
