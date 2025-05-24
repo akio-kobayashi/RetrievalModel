@@ -99,7 +99,7 @@ def train(cfg):
         check_val_every_n_epoch = cfg.get("check_val_every_n_epoch", 10),
     )
 
-    trainer.fit(model, train_dl, vald_dl)
+    trainer.fit(model, train_dl, val_dl)
 
 ################################################################################
 #  CLI                                                                         #
