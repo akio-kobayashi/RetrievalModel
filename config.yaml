@@ -7,16 +7,16 @@
 # ────────────────────────────────
 train_csv:  train.csv          # 学習用 CSV
 val_csv:    val.csv            # 検証用 CSV
-stats_tensor: stats.pt    # (mean, std) を格納した .pt
+stats_tensor: stats_pitch.pt    # (mean, std) を格納した .pt
 
 # ────────────────────────────────
 #  データローダ
 # ────────────────────────────────
-batch_size:  2
+batch_size:  16
 num_workers: 2
-max_sec: 3.0
-grad_accum: 8
-warmup_steps: 5000
+max_sec: 4.0
+grad_accum: 1
+warmup_steps: 10000000000
 mse_steps: 0
 adv_scale: 1.0
 max_norm: 5.0
@@ -30,32 +30,33 @@ hop:  320          # HuBERT 20 ms → 16 kHz で 320 サンプル
 # ────────────────────────────────
 #  モデル・損失ハイパーパラメータ
 # ────────────────────────────────
-lr_g: 0.0001       # Generator 学習率
-lr_d: 0.0001       # Discriminator 学習率
+lr_g: 0.0004
+#lr_g: 0.0001       # Generator 学習率
+lr_d: 0.00005      # Discriminator 学習率
 
 lambda_fm:  2.0    # Feature-Matching 重み
 lambda_mag: 1.0    # STFT magnitude L1
 lambda_sc:  1.0    # STFT spectral-convergence
-
+lambda_cmp: 1.0    # Complex STFT loss
+lambda_wav: 0.1    # Wave loss weight
+lambda_pitch: 1.0  # Pitch loss
 # ────────────────────────────────
 #  学習率スケジューラ (StepLR)
 # ────────────────────────────────
-sched_gamma: 0.5   # 学習率減衰率
-sched_step:  200   # 何 epoch ごとに減衰
+sched_gamma: 0.99   # 学習率減衰率
+sched_step:  1000   # 何 epoch ごとに減衰
 
 # ────────────────────────────────
 #  学習ループ
 # ────────────────────────────────
-max_epochs: 400
+max_epochs: 5000
 gpus:        1     # 0 → CPU / 1→ single GPU / N→ multi GPU
 
 # ────────────────────────────────
 #  ロギング・チェックポイント
 # ────────────────────────────────
-work_dir: /media/akio/hdd1/rvc/models/test/logs            # Lightning の default_root_dir
-log_dir:  /media/akio/hdd1/rvc/models/test/logs/tb         # TensorBoard 保存先
-ckpt_dir: /media/akio/hdd1/rvc/models/test/logs/ckpt       # ModelCheckpoint が .ckpt を置く先
+work_dir: /media/akio/hdd1/rvc/models/stft/logs            # Lightning の default_root_dir
+log_dir:  /media/akio/hdd1/rvc/models/stft/logs/tb         # TensorBoard 保存先
+ckpt_dir: /media/akio/hdd1/rvc/models/stft/logs/ckpt       # ModelCheckpoint が .ckpt を置く先
 save_top_k: 1
 every_n_epochs: 10
-#   monitor=loss_g/epoch,  save_last: true,  save_top_k: 1,  every_n_epochs: 50
-# ============================================================
