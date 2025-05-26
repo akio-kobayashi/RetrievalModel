@@ -13,7 +13,11 @@ def compute_stats(csv):
     for idx, row in df.iterrows():
         pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
         f0_list.append(pt["log_f0"].float())
-        mel_list.append(pt["mel"].float())
+        mel = pt["mel"].float()
+        if mel.size(0) == 80 and mel.size(1) != 80:
+            mel = mel.transpose(0, 1)
+            
+        mel_list.append(mel)
     cat = torch.cat(f0_list)
     pitch_mean = cat.mean().item()
     pitch_std  = cat.std(unbiased=False).item() + 1e-9
