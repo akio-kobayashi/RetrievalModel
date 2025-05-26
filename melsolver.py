@@ -59,6 +59,24 @@ class MelVCSystem(pl.LightningModule):
         opt_d.zero_grad()
         opt_g.zero_grad()
 
+        if self.current_epoch < self.warmup_epochs:
+          # Generator前向き
+          mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
+          mel_fake_c = mel_fake[:, :mel_real.size(1)]
+          # L1損失
+          loss_mel = F.l1_loss(mel_fake_c, mel_real) / self.grad_accum
+          # backward & step（Gのみ）
+          self.manual_backward(loss_mel)
+          if (batch_idx + 1) % self.grad_accum == 0:
+              opt_g.step()
+              opt_g.zero_grad()
+          # ログ
+          self.log_dict({
+              "phase": "warmup",
+              "loss_mel": loss_mel,
+          }, prog_bar=True, on_step=True)
+          return loss_mel
+
         # ------- Discriminator 更新フェーズ -------
         # ジェネレータからの出力を得て、判別器にはdetachして渡す
         mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
