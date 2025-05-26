@@ -5,7 +5,6 @@ import pandas as pd
 import torch
 import torchaudio
 from tqdm import tqdm
-from einops import 
 def compute_stats(csv):
     df = pd.read_csv(csv)
     f0_list = []
