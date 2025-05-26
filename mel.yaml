@@ -1,0 +1,61 @@
+# =======================  config.yaml  =======================
+#  必要な項目はすべてここで定義。train_vc.py が参照します。
+# ============================================================
+
+# ────────────────────────────────
+#  データセット関連
+# ────────────────────────────────
+train_csv:  train.csv           # 学習用 CSV（melパス・hubertパス等を持つもの）
+stats_tensor: stats_pitch.pt    # (mean, std) を格納した .pt
+
+# ────────────────────────────────
+#  データローダ
+# ────────────────────────────────
+batch_size:  16
+num_workers: 2
+max_sec: 4.0
+grad_accum: 1
+
+# ────────────────────────────────
+#  サンプリング・HuBERT 設定
+# ────────────────────────────────
+sr:   16000        # サンプリングレート
+hop:  320          # HuBERT 20 ms → 16 kHz で 320 サンプル
+
+# ────────────────────────────────
+#  モデル・損失ハイパーパラメータ
+# ────────────────────────────────
+lr_g: 0.0004         # Generator 学習率
+lr_d: 0.00005        # Discriminator 学習率
+
+lambda_fm:  2.0      # Feature-Matching 重み
+lambda_mel: 1.0      # L1損失の重み
+lambda_adv: 1.0      # LSGAN adversarial loss の重み
+
+upsample_rates: [5, 2, 4, 2, 2] # Generatorアップサンプル構造
+
+# ────────────────────────────────
+#  学習率スケジューラ (StepLR)
+# ────────────────────────────────
+sched_gamma: 0.99   # 学習率減衰率
+sched_step:  1000   # 何 step ごとに減衰
+
+# ────────────────────────────────
+#  2段階学習（ウォームアップ期間）
+# ────────────────────────────────
+warmup_epochs: 10   # L1損失のみで学習するエポック数
+
+# ────────────────────────────────
+#  学習ループ
+# ────────────────────────────────
+max_epochs: 5000
+gpus:        1     # 0 → CPU / 1→ single GPU / N→ multi GPU
+
+# ────────────────────────────────
+#  ロギング・チェックポイント
+# ────────────────────────────────
+work_dir: /media/akio/hdd1/rvc/models/melgan/logs         # Lightning の default_root_dir
+log_dir:  /media/akio/hdd1/rvc/models/melgan/logs/tb      # TensorBoard 保存先
+ckpt_dir: /media/akio/hdd1/rvc/models/melgan/logs/ckpt    # ModelCheckpoint の保存先
+save_top_k: 1
+every_n_epochs: 10
