@@ -21,8 +21,8 @@ def compute_stats(csv):
     pitch_mean = cat.mean().item()
     pitch_std  = cat.std(unbiased=False).item() + 1e-9
     cat = torch.cat(mel_list)
-    mel_mean = cat.mean(dim=0).item()
-    mel_std = cat.std(dim=0, unbiased=False).item() + 1e-9
+    mel_mean = cat.mean(dim=0)
+    mel_std = cat.std(dim=0, unbiased=False) + 1e-9
     return mel_mean, mel_std, pitch_mean, pitch_std
 
 def main():
