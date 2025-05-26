@@ -76,7 +76,7 @@ def train(cfg):
 if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser(description="Train MelRVC model")
-    parser.add_argument("--config", type=str, default="config.yaml", help="Path to YAML config file")
+    parser.add_argument("--config", type=str, default="mel.yaml", help="Path to YAML config file")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
