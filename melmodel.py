@@ -25,7 +25,7 @@ class ConformerBlock(nn.Module):
             Rearrange('b t c -> b c t'),
             nn.Conv1d(d_model, d_model, 5, padding=2, groups=d_model),
             nn.GLU(dim=1),
-            nn.Conv1d(d_model, d_model, 1),
+            nn.Conv1d(d_model//2, d_model, 1),
             nn.Dropout(dropout)
         )
         self.ffn2 = nn.Sequential(
