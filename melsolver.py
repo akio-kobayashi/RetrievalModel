@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from melmodel import RVCStyleVC, MultiPeriodDiscriminator, MultiScaleDiscriminator
+from melmodel import RVCStyleVC, MelMultiPeriodDiscriminator, MelMultiScaleDiscriminator
 
 class MelVCSystem(pl.LightningModule):
     """Conformer‑based Mel GAN: 2段階学習（ウォームアップL1→GAN+FM）."""
@@ -27,8 +27,8 @@ class MelVCSystem(pl.LightningModule):
         self.warmup_epochs = warmup_epochs
 
         self.gen = RVCStyleVC()
-        self.disc_mpd = MultiPeriodDiscriminator()
-        self.disc_msd = MultiScaleDiscriminator()
+        self.disc_mpd = MelMultiPeriodDiscriminator()
+        self.disc_msd = MelMultiScaleDiscriminator()
 
     @staticmethod
     def _adv_d(real, fake):

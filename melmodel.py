@@ -111,93 +111,114 @@ class ConformerGenerator(nn.Module):
       x = x.transpose(1,2)
       return self.out_proj(x)
 
-# ---- Discriminators (MPD/MSD, 波形判定, 可変長対応) ------------------------
-class PeriodDiscriminator(nn.Module):
-    def __init__(self, period: int):
+# ---- Mel対応 PeriodDiscriminator ----
+class MelPeriodDiscriminator(nn.Module):
+    def __init__(self, period: int, mel_dim: int = 80):
         super().__init__()
         self.period = period
+        # melチャネルをそのまま入力チャネルとする
+        chs = [mel_dim, 32, 128, 512, 1024, 1024]
+        ks  = [5, 3, 3, 3, 3]
         seq = []
-        chs = [1, 32, 128, 512, 1024, 1024]
-        ks = [5, 3, 3, 3, 3]
         for i in range(len(ks)):
             seq.append(spectral_norm(
                 nn.Conv2d(
                     chs[i], chs[i+1],
                     (ks[i], 1),
-                    stride=(3 if i ==0 else 1, 1),
+                    stride=(3 if i == 0 else 1, 1),
                     padding=((ks[i]-1)//2, 0)
                 )
             ))
             seq.append(nn.LeakyReLU(0.1))
+        # 最終出力は1チャネル
         seq.append(spectral_norm(
-            nn.Conv2d(chs[-1], 1, (3, 1), padding=(1,0))
+            nn.Conv2d(chs[-1], 1, (3, 1), padding=(1, 0))
         ))
         self.convs = nn.ModuleList(seq)
 
-    def forward(self, x):
-        b, _, t = x.shape
+    def forward(self, x: torch.Tensor):
+        # x: (B, M, T)
+        b, c, t = x.shape
+        # 時間長をperiodで割り切れるようパディング
         if t % self.period != 0:
             pad = self.period - (t % self.period)
             x = F.pad(x, (0, pad), mode="reflect")
             t = t + pad
-        x = x.view(b, 1, self.period, t // self.period)
+        # (B, C, T) -> (B, C, period, t//period)
+        x = x.view(b, c, self.period, t // self.period)
         feats = []
-        for l in self.convs[:-1]:
-            x = l(x)
+        for layer in self.convs[:-1]:
+            x = layer(x)
             feats.append(x)
         out = self.convs[-1](x)
         feats.append(out)
         return out.flatten(1, -1), feats
 
-class MultiPeriodDiscriminator(nn.Module):
-    def __init__(self, periods=[2,3,5,7,11]):
+# ---- Mel対応 MultiPeriodDiscriminator ----
+class MelMultiPeriodDiscriminator(nn.Module):
+    def __init__(self, periods: list[int] = [2,3,5,7,11], mel_dim: int = 80):
         super().__init__()
-        self.discriminators = nn.ModuleList([PeriodDiscriminator(p) for p in periods])
+        self.discriminators = nn.ModuleList([
+            MelPeriodDiscriminator(p, mel_dim) for p in periods
+        ])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
+        # x: (B, M, T)
         logits, feats = [], []
         for d in self.discriminators:
             l, f = d(x)
-            logits.append(l)
+            logits.append(l);
             feats.append(f)
         return logits, feats
 
-class ScaleDiscriminator(nn.Module):
-    def __init__(self):
+# ---- Mel対応 ScaleDiscriminator ----
+class MelScaleDiscriminator(nn.Module):
+    def __init__(self, mel_dim: int = 80):
         super().__init__()
-        chs = [1, 128, 128, 256, 512, 1024, 1024]
-        ks = [15, 41, 41, 41, 41, 5]
-        ss = [1, 4, 4, 4, 4, 1]
+        # melチャネルをそのまま入力チャネルとする
+        chs = [mel_dim, 128, 128, 256, 512, 1024, 1024]
+        ks  = [15, 41, 41, 41, 41, 5]
+        ss  = [1,   4,  4,  4,  4,  1]
         groups = [1, 4, 16, 16, 16, 1]
         seq = []
         for i in range(len(ks)):
             seq.append(spectral_norm(
                 nn.Conv1d(
-                    chs[i], chs[i+1], ks[i], stride=ss[i], padding=(ks[i]-1)//2, groups=groups[i]
+                    chs[i], chs[i+1], ks[i],
+                    stride=ss[i], padding=(ks[i]-1)//2,
+                    groups=groups[i]
                 )
             ))
             seq.append(nn.LeakyReLU(0.1))
-        seq.append(spectral_norm(nn.Conv1d(chs[-1], 1, 3, padding=1)))
+        seq.append(spectral_norm(
+            nn.Conv1d(chs[-1], 1, 3, padding=1)
+        ))
         self.convs = nn.ModuleList(seq)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
+        # x: (B, M, T)
         feats = []
-        for l in self.convs[:-1]:
-            x = l(x)
+        for layer in self.convs[:-1]:
+            x = layer(x)
             feats.append(x)
         out = self.convs[-1](x)
         feats.append(out)
         return out.flatten(1, -1), feats
 
-class MultiScaleDiscriminator(nn.Module):
-    def __init__(self):
+# ---- Mel対応 MultiScaleDiscriminator ----
+class MelMultiScaleDiscriminator(nn.Module):
+    def __init__(self, mel_dim: int = 80):
         super().__init__()
-        self.discriminators = nn.ModuleList([ScaleDiscriminator() for _ in range(3)])
+        self.discriminators = nn.ModuleList([
+            MelScaleDiscriminator(mel_dim) for _ in range(3)
+        ])
         self.avgpools = nn.ModuleList([
-            nn.AvgPool1d(4, 2, padding=2), nn.AvgPool1d(4, 2, padding=2)
+            nn.AvgPool1d(4, 2, padding=2),
+            nn.AvgPool1d(4, 2, padding=2)
         ])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
+        # x: (B, M, T)
         logits, feats = [], []
         for i, d in enumerate(self.discriminators):
             if i == 0:
@@ -241,8 +262,8 @@ if __name__ == "__main__":
     wav = model(hub, f0)
     print("Generator output:", wav.shape)  # e.g. (B, T_wav)
 
-    mpd = MultiPeriodDiscriminator()
-    msd = MultiScaleDiscriminator()
+    mpd = MelMultiPeriodDiscriminator()
+    msd = MelMultiScaleDiscriminator()
     logits_mpd, feats_mpd = mpd(wav.unsqueeze(1))
     logits_msd, feats_msd = msd(wav.unsqueeze(1))
     print("MPD logits:", [l.shape for l in logits_mpd])
