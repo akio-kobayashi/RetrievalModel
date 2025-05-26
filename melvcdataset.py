@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Optional
 import torch
 from torch.utils.data import Dataset
 import math
+from einops import rearrange
 
 class VCMelDataset(Dataset):
     """
@@ -54,8 +55,8 @@ class VCMelDataset(Dataset):
 
         # mel正規化（ベクトル, 各次元単位）
         if "mel_mean" in stats_tensor and "mel_std" in stats_tensor:
-            self.mel_mean = torch.as_tensor(stats_tensor["mel_mean"]).float()
-            self.mel_std  = torch.as_tensor(stats_tensor["mel_std"]).float() + 1e-9
+            self.mel_mean = rearrange(torch.as_tensor(stats_tensor["mel_mean"]).float(), '(b c) -> b c', c=1)
+            self.mel_std  = rearrange(torch.as_tensor(stats_tensor["mel_std"]).float() + 1e-9, '(b c) -> b c', c=1)
         else:
             mel_list = []
             for row in self.rows:
@@ -68,8 +69,8 @@ class VCMelDataset(Dataset):
                   raise ValueError(f"Unexpected mel shape: {mel.shape}")
                 mel_list.append(mel)
             cat = torch.cat(mel_list, dim=0)
-            self.mel_mean = cat.mean(dim=0)
-            self.mel_std  = cat.std(dim=0, unbiased=False) + 1e-9
+            self.mel_mean = rearrange(cat.mean(dim=0), '(b c)-> b c', c=1)
+            self.mel_std  = rearrange(cat.std(dim=0, unbiased=False) + 1e-9, '(b c)->b c', c=1)
 
     def __len__(self):
         return len(self.rows)
@@ -80,7 +81,6 @@ class VCMelDataset(Dataset):
         hubert: torch.Tensor = pt["hubert"].float()   # (T, D)
         pitch:  torch.Tensor = pt["log_f0"].float()   # (T,)
         mel:    torch.Tensor = pt["mel"].float()      # (T_mel, mel_dim)
-
         T = hubert.size(0)
         max_frames = self.max_frames or T
         if T > max_frames:
@@ -101,7 +101,7 @@ class VCMelDataset(Dataset):
         # メルフレーム区間（時刻同期, floorで整数化）
         mel_start = int(math.floor(start_sample / self.mel_hop))
         mel_end   = int(math.floor(end_sample   / self.mel_hop))
-        mel_crop  = mel[mel_start:mel_end]
+        mel_crop  = mel[:, mel_start:mel_end]
         mel_norm  = (mel_crop - self.mel_mean) / self.mel_std
 
         return hubert_crop, pitch_norm, mel_norm
