@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 import torchaudio
 from tqdm import tqdm
-
+from einops import 
 def compute_stats(csv):
     df = pd.read_csv(csv)
     f0_list = []
@@ -22,8 +22,8 @@ def compute_stats(csv):
     pitch_mean = cat.mean().item()
     pitch_std  = cat.std(unbiased=False).item() + 1e-9
     cat = torch.cat(mel_list)
-    mel_mean = cat.mean().item()
-    mel_std = cat.std(unbiased=False).item() + 1e-9
+    mel_mean = cat.mean(dim=0).item()
+    mel_std = cat.std(dim=0, unbiased=False).item() + 1e-9
     return mel_mean, mel_std, pitch_mean, pitch_std
 
 def main():
