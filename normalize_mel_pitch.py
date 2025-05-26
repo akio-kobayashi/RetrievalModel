@@ -26,13 +26,13 @@ def main():
     ap = argparse.ArgumentParser(description="Compute global mean/std of pitch from analyzed data")
     ap.add_argument("--csv", type=Path)
     ap.add_argument("--out", type=Path, help="output stats file")
-    ap.add_argument("--stats", type=str)
+    #ap.add_argument("--stats", type=str)
     args = ap.parse_args()
 
-    stats = torch.load(args.stats, map_location="cpu", weights_only=True)  # (mean,std)
+    #stats = torch.load(args.stats, map_location="cpu", weights_only=True)  # (mean,std)
 
     mel_mean, mel_std, pitch_mean, pitch_std = compute_stats(args.csv)
-    output_stats = {"mel_mean": stats['mel_mean'], "mel_std": stats['mel_std'], "pitch_mean": pitch_mean, "pitch_std": pitch_std}
+    output_stats = {"mel_mean": mel_mean, "mel_std": mel_std, "pitch_mean": pitch_mean, "pitch_std": pitch_std}
     torch.save(output_stats, args.out)
 
 
