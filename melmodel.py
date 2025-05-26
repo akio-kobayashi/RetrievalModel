@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import weight_norm, spectral_norm
 from typing import List, Tuple, Optional
-from einops import Rearrange
+from einops.layers.torch import Rearrange
 
 # ---- Conformer Block -------------------------------------------------------
 # PyTorch公式やespnetのConformerBlockと互換あり
