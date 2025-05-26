@@ -101,7 +101,7 @@ class VCMelDataset(Dataset):
 
         return hubert_crop, pitch_norm, mel_norm
 
-def data_processing_mel(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+def data_processing(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
   huberts, pitches, mels = zip(*batch)
   B = len(batch)
   T_max = max(h.size(0) for h in huberts)
