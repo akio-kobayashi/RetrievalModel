@@ -48,8 +48,8 @@ class MelVCSystem(pl.LightningModule):
                 cnt += 1
         return loss / max(cnt, 1)
 
-    def forward(self, hubert, pitch):
-        return self.gen(hubert, pitch)
+    def forward(self, hubert, pitch, target_length):
+        return self.gen(hubert, pitch, target_length=target_length)
 
     def training_step(self, batch, batch_idx):
         hub, pit, mel_real = batch
@@ -57,7 +57,7 @@ class MelVCSystem(pl.LightningModule):
         if batch_idx % self.grad_accum == 0:
             opt_g.zero_grad(); opt_d.zero_grad()
 
-        mel_fake = self.gen(hub, pit)
+        mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
         cut_len = min(mel_real.size(1), mel_fake.size(1))
         mel_real_c = mel_real[:, :cut_len]
         mel_fake_c = mel_fake[:, :cut_len]
@@ -117,7 +117,7 @@ class MelVCSystem(pl.LightningModule):
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         hub, pit, mel_real = batch
-        mel_fake = self.gen(hub, pit)
+        mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
         cut_len = min(mel_real.size(1), mel_fake.size(1))
         mel_real_c = mel_real[:, :cut_len]
         mel_fake_c = mel_fake[:, :cut_len]
@@ -133,3 +133,12 @@ class MelVCSystem(pl.LightningModule):
             {"scheduler": sched_g, "interval": "step"},
             {"scheduler": sched_d, "interval": "step"},
         ])
+    
+    @torch.no_grad()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+      hubert, pitch, _ = batch  # mel は不要
+      z = self.gen.encoder(hubert, pitch)  # (B, C, T)
+
+
+      mel = self.gen.generator(z)  # 明示補間推論
+      return mel

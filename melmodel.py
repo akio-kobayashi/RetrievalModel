@@ -82,7 +82,7 @@ class ConformerGenerator(nn.Module):
         n_conformer=4,
         nhead=4,
         dropout=0.1,
-        upsample_factor=1,
+        upsample_factor=1.25,
         align_to_length: int = None,  # 推論時ターゲット長（系列長が異なる場合用）
     ):
         super().__init__()
@@ -95,26 +95,18 @@ class ConformerGenerator(nn.Module):
         self.align_to_length = align_to_length
 
     def forward(self, x, target_length: int = None):
-        """
-        x: (B, C, T_in)
-        target_length: 任意。指定時はこの長さに線形補間で合わせる
-        """
-        x = self.input_proj(x)           # (B, d_model, T_in)
-        x = x.transpose(1,2)             # (B, T_in, d_model)
-        for block in self.conformers:
-            x = block(x)
-        if target_length is not None:
-            # バッチごとに系列長を補間してターゲット長へ
-            x = F.interpolate(
-                x.transpose(1,2), size=target_length, mode="linear", align_corners=True
-            ).transpose(1,2)  # (B, target_length, d_model)
-        elif self.upsample_factor > 1:
-            x = F.interpolate(
-                x.transpose(1,2), scale_factor=self.upsample_factor, mode="linear", align_corners=True
-            ).transpose(1,2)
-        # else: 何もしない
-        x = self.out_proj(x)             # (B, T_out, mel_dim)
-        return x
+      x = self.input_proj(x).transpose(1,2)
+      for block in self.conformers:
+          x = block(x)
+      x = x.transpose(1,2)
+    
+      if target_length is not None:
+          x = F.interpolate(x, size=target_length, mode="linear", align_corners=True)
+      elif self.upsample_factor != 1.0:
+          x = F.interpolate(x, scale_factor=self.upsample_factor, mode="linear", align_corners=True)
+    
+      x = x.transpose(1,2)
+      return self.out_proj(x)
 
 # ---- Discriminators (MPD/MSD, 波形判定, 可変長対応) ------------------------
 class PeriodDiscriminator(nn.Module):
@@ -218,16 +210,16 @@ class MultiScaleDiscriminator(nn.Module):
 
 # ---- RVC VCモデル本体 (ConformerGen) ---------------------------------------
 class RVCStyleVC(nn.Module):
-    def __init__(self, latent_ch=256, d_model=256, n_conformer=4, nhead=4, upsample_rates=[5,2,4,2,2]):
+    def __init__(self, latent_ch=256, d_model=256, n_conformer=4, nhead=4):
         super().__init__()
         self.encoder = PosteriorEncoder(latent_ch=latent_ch)
         self.generator = ConformerGenerator(
-            in_ch=latent_ch, d_model=d_model, n_conformer=n_conformer, nhead=nhead, upsample_rates=upsample_rates
+            in_ch=latent_ch, d_model=d_model, n_conformer=n_conformer, nhead=nhead
         )
 
-    def forward(self, hubert, pitch):
+    def forward(self, hubert, pitch, target_length: int = None):
         z = self.encoder(hubert, pitch)     # (B, latent_ch, T)
-        wav = self.generator(z)             # (B, 1, T_wav)
+        wav = self.generator(z, target_length=target_length)             # (B, 1, T_wav)
         return wav.squeeze(1)               # (B, T_wav)
 
 # ---- 損失関数側: 切り詰め/truncateの例 ------------------------------------
