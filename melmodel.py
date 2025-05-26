@@ -57,7 +57,7 @@ class PosteriorEncoder(nn.Module):
         for _ in range(n_layers):
             layers.append(
                 nn.Sequential(
-                    nn.Conv1d(ch_in, latent_ch, 5, padding=2),
+                    nn.Conv1d(ch_in, latent_ch * 2, 5, padding=2),
                     nn.GLU(dim=1),
                     nn.BatchNorm1d(latent_ch)
                 )
