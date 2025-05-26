@@ -72,7 +72,6 @@ class MelVCSystem(pl.LightningModule):
               opt_g.zero_grad()
           # ログ
           self.log_dict({
-              "phase": "warmup",
               "loss_mel": loss_mel,
           }, prog_bar=True, on_step=True)
           return loss_mel
