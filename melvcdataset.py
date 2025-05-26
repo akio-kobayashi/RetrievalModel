@@ -102,22 +102,25 @@ class VCMelDataset(Dataset):
         return hubert_crop, pitch_norm, mel_norm
 
 def data_processing_mel(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
-    huberts, pitches, mels = zip(*batch)
-    B = len(batch)
-    T_max = max(h.size(0) for h in huberts)
-    D = huberts[0].size(1)
-    M = mels[0].size(1) if M := mels[0].size(1) else 80
+  huberts, pitches, mels = zip(*batch)
+  B = len(batch)
+  T_max = max(h.size(0) for h in huberts)
+  D = huberts[0].size(1)
 
-    h_pad = torch.zeros(B, T_max, D)
-    p_pad = torch.zeros(B, T_max)
-    m_pad = torch.zeros(B, max(m.size(0) for m in mels), M)
+  # メルスペクトルの次元数を取得（0行ならデフォルト80）
+  M = mels[0].size(1) if mels[0].size(0) > 0 else 80
 
-    for i, (h, p, m) in enumerate(batch):
-        h_pad[i, :h.size(0)] = h
-        p_pad[i, :p.size(0)] = p
-        m_pad[i, :m.size(0)] = m
+  h_pad = torch.zeros(B, T_max, D)
+  p_pad = torch.zeros(B, T_max)
+  m_pad = torch.zeros(B, max(m.size(0) for m in mels), M)
 
-    return h_pad, p_pad, m_pad
+  for i, (h, p, m) in enumerate(batch):
+      h_pad[i, :h.size(0)] = h
+      p_pad[i, :p.size(0)] = p
+      m_pad[i, :m.size(0)] = m
+
+  return h_pad, p_pad, m_pad
+
 
 # ------------------------------------------------------------
 #  Stand-alone test
