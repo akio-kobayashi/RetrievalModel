@@ -23,7 +23,7 @@ def compute_stats(csv):
     pitch_std  = cat.std(unbiased=False).item() + 1e-9
     cat = torch.cat(mel_list)
     mel_mean = cat.mean().item()
-    mel_std = cat.std(unbiased=False.item() + 1e-9)
+    mel_std = cat.std(unbiased=False).item() + 1e-9
     return mel_mean, mel_std, pitch_mean, pitch_std
 
 def main():
