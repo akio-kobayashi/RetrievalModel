@@ -62,6 +62,7 @@ class VCMelDataset(Dataset):
                 pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
                 mel = pt["mel"].float()
                 mel_list.append(mel)
+                print(mel.shape)
             cat = torch.cat(mel_list, dim=0)
             self.mel_mean = cat.mean(dim=0)
             self.mel_std  = cat.std(dim=0, unbiased=False) + 1e-9
