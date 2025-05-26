@@ -61,8 +61,11 @@ class VCMelDataset(Dataset):
             for row in self.rows:
                 pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
                 mel = pt["mel"].float()
-                if mel.size(1) != 80:  # 例: expected_mel_dim = 80
-                  mel = mel.transpose(0, 1)  # [T, M] に揃える
+                if mel.size(0) == 80 and mel.size(1) != 80:
+                  mel = mel.transpose(0, 1)
+
+                if mel.ndim != 2 or mel.size(1) != 80:
+                  raise ValueError(f"Unexpected mel shape: {mel.shape}")
                 mel_list.append(mel)
             cat = torch.cat(mel_list, dim=0)
             self.mel_mean = cat.mean(dim=0)
