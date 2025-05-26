@@ -18,7 +18,6 @@ class MelVCSystem(pl.LightningModule):
         sched_gamma: float = 0.5,
         sched_step: int = 200,
         grad_accum: int = 1,
-        upsample_rates = [5, 2, 4, 2, 2],
         warmup_epochs: int = 10,    # ウォームアップ期間（エポック数）
     ):
         super().__init__()
@@ -27,7 +26,7 @@ class MelVCSystem(pl.LightningModule):
         self.grad_accum = max(1, grad_accum)
         self.warmup_epochs = warmup_epochs
 
-        self.gen = RVCStyleVC(upsample_rates=upsample_rates)
+        self.gen = RVCStyleVC()
         self.disc_mpd = MultiPeriodDiscriminator()
         self.disc_msd = MultiScaleDiscriminator()
 

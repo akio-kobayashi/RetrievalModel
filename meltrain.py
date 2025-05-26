@@ -41,7 +41,6 @@ def train(cfg):
         sched_gamma = cfg.get("sched_gamma", 0.5),
         sched_step  = cfg.get("sched_step",  200),
         grad_accum  = cfg.get("grad_accum", 1),
-        upsample_rates = cfg.get("upsample_rates", [5, 2, 4, 2, 2]),
         warmup_epochs = cfg.get("warmup_epochs", 10),
     )
 

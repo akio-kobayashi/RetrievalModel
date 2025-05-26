@@ -32,8 +32,6 @@ lambda_fm:  2.0      # Feature-Matching 重み
 lambda_mel: 1.0      # L1損失の重み
 lambda_adv: 1.0      # LSGAN adversarial loss の重み
 
-upsample_rates: [5, 2, 4, 2, 2] # Generatorアップサンプル構造
-
 # ────────────────────────────────
 #  学習率スケジューラ (StepLR)
 # ────────────────────────────────

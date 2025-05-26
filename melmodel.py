@@ -20,9 +20,9 @@ class ConformerBlock(nn.Module):
         )
         self.conv = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Conv1d(d_model, d_model, 5, padding=2, groups=d_model),  # Depthwise Conv
-            nn.GLU(dim=1),  # gating
-            nn.Conv1d(d_model, d_model, 1),  # pointwise
+            nn.Conv1d(d_model, d_model, 5, padding=2, groups=d_model),
+            nn.GLU(dim=1),
+            nn.Conv1d(d_model, d_model, 1),
             nn.Dropout(dropout)
         )
         self.ffn2 = nn.Sequential(
@@ -40,7 +40,6 @@ class ConformerBlock(nn.Module):
         x_attn, _ = self.self_attn(x, x, x, key_padding_mask=mask)
         x = x + x_attn
         x = x + self.ffn1(x)
-        # Conv expects (B,D,T)
         x_conv = x.transpose(1,2)
         x_conv = self.conv(x_conv)
         x = x + x_conv.transpose(1,2)
@@ -75,40 +74,47 @@ class PosteriorEncoder(nn.Module):
 
 # ---- Conformer-based Generator --------------------------------------------
 class ConformerGenerator(nn.Module):
-    def __init__(self, in_ch=256, d_model=256, mel_dim=80, n_conformer=4, nhead=4, upsample_rates=[5,2,4,2,2]):
+    def __init__(
+        self,
+        in_ch=256,
+        d_model=256,
+        mel_dim=80,
+        n_conformer=4,
+        nhead=4,
+        dropout=0.1,
+        upsample_factor=1,
+        align_to_length: int = None,  # 推論時ターゲット長（系列長が異なる場合用）
+    ):
         super().__init__()
         self.input_proj = nn.Conv1d(in_ch, d_model, 1)
         self.conformers = nn.ModuleList([
-            ConformerBlock(d_model, nhead) for _ in range(n_conformer)
+            ConformerBlock(d_model, nhead, dropout=dropout) for _ in range(n_conformer)
         ])
-        self.upsample_blocks = nn.ModuleList()
-        ch = d_model
-        for r in upsample_rates:
-            self.upsample_blocks.append(
-                nn.Sequential(
-                    nn.LeakyReLU(0.1),
-                    nn.Upsample(scale_factor=r, mode='nearest'),
-                    weight_norm(nn.Conv1d(ch, ch//2, 5, padding=2)),
-                    nn.LeakyReLU(0.1),
-                    weight_norm(nn.Conv1d(ch//2, ch//2, 1)),  # Depthwise lowpass
-                )
-            )
-            ch //= 2
-        self.post = nn.Sequential(
-            nn.LeakyReLU(0.1),
-            weight_norm(nn.Conv1d(ch, 1, 7, padding=3)),  # 波形生成
-        )
+        self.out_proj = nn.Linear(d_model, mel_dim)
+        self.upsample_factor = upsample_factor
+        self.align_to_length = align_to_length
 
-    def forward(self, x):
-        # x: (B, C, T)
-        x = self.input_proj(x)
-        x = x.transpose(1,2)  # (B,T,C)
+    def forward(self, x, target_length: int = None):
+        """
+        x: (B, C, T_in)
+        target_length: 任意。指定時はこの長さに線形補間で合わせる
+        """
+        x = self.input_proj(x)           # (B, d_model, T_in)
+        x = x.transpose(1,2)             # (B, T_in, d_model)
         for block in self.conformers:
             x = block(x)
-        x = x.transpose(1,2)  # (B,C,T)
-        for up in self.upsample_blocks:
-            x = up(x)
-        return self.post(x)  # (B,1,T_wav)
+        if target_length is not None:
+            # バッチごとに系列長を補間してターゲット長へ
+            x = F.interpolate(
+                x.transpose(1,2), size=target_length, mode="linear", align_corners=True
+            ).transpose(1,2)  # (B, target_length, d_model)
+        elif self.upsample_factor > 1:
+            x = F.interpolate(
+                x.transpose(1,2), scale_factor=self.upsample_factor, mode="linear", align_corners=True
+            ).transpose(1,2)
+        # else: 何もしない
+        x = self.out_proj(x)             # (B, T_out, mel_dim)
+        return x
 
 # ---- Discriminators (MPD/MSD, 波形判定, 可変長対応) ------------------------
 class PeriodDiscriminator(nn.Module):
