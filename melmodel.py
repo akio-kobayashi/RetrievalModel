@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrizations import weight_norm, spectral_norm
 from typing import List, Tuple, Optional
+from einops import Rearrange
 
 # ---- Conformer Block -------------------------------------------------------
 # PyTorch公式やespnetのConformerBlockと互換あり
@@ -19,7 +20,9 @@ class ConformerBlock(nn.Module):
             nn.Dropout(dropout)
         )
         self.conv = nn.Sequential(
+            Rearrange('b c t -> b t c'),
             nn.LayerNorm(d_model),
+            Rearrange('b t c -> b c t'),
             nn.Conv1d(d_model, d_model, 5, padding=2, groups=d_model),
             nn.GLU(dim=1),
             nn.Conv1d(d_model, d_model, 1),
