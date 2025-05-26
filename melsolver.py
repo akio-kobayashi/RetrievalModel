@@ -80,6 +80,7 @@ class MelVCSystem(pl.LightningModule):
         # backward & step for D
         self.manual_backward(loss_d)
         opt_d.step()
+        opt_d.zero_grad()
 
         # ------- Generator 更新フェーズ -------
         # （重要）再度ジェネレータをフォワードして新しいグラフを構築
@@ -87,13 +88,23 @@ class MelVCSystem(pl.LightningModule):
         mel_fake_c = mel_fake[:, :mel_real.size(1)]
         fake_input = mel_fake_c.transpose(1, 2)  # 今度は detach しない
 
-        # Adversarial loss
-        fk_mpd, _ = self.disc_mpd(fake_input)
-        fk_msd, _ = self.disc_msd(fake_input)
+        real_input = mel_real.transpose(1, 2)
+        _, rl_feat_mpd = self.disc_mpd(real_input)
+        _, rl_feat_msd = self.disc_msd(real_input)
+
+        fk_mpd, fk_feat_mpd = self.disc_mpd(fake_input)
+        fk_msd, fk_feat_msd = self.disc_msd(fake_input)
+        
         loss_adv = (self._adv_g(fk_mpd) + self._adv_g(fk_msd)) / self.grad_accum
+        loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
+
+        # Adversarial loss
+        #fk_mpd, _ = self.disc_mpd(fake_input)
+        #fk_msd, _ = self.disc_msd(fake_input)
+        #loss_adv = (self._adv_g(fk_mpd) + self._adv_g(fk_msd)) / self.grad_accum
 
         # Feature matching loss
-        loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
+        #loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
 
         # L1 Mel loss
         loss_mel = F.l1_loss(mel_fake_c, mel_real) / self.grad_accum
