@@ -55,8 +55,8 @@ class VCMelDataset(Dataset):
 
         # mel正規化（ベクトル, 各次元単位）
         if "mel_mean" in stats_tensor and "mel_std" in stats_tensor:
-            self.mel_mean = rearrange(torch.as_tensor(stats_tensor["mel_mean"]).float(), '(b c) -> b c', c=1)
-            self.mel_std  = rearrange(torch.as_tensor(stats_tensor["mel_std"]).float() + 1e-9, '(b c) -> b c', c=1)
+            self.mel_mean = rearrange(torch.as_tensor(stats_tensor["mel_mean"]).float(), '(b c) -> b c', b=1)
+            self.mel_std  = rearrange(torch.as_tensor(stats_tensor["mel_std"]).float() + 1e-9, '(b c) -> b c', b=1)
         else:
             mel_list = []
             for row in self.rows:
