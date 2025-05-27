@@ -71,7 +71,7 @@ def main(args):
         rows = csv.DictReader(f)
         for row in rows:
             pt_path = Path(row["hubert"])
-            tens = torch.load(pt_path, map_location="cpu")
+            tens = torch.load(pt_path, map_location=device)
             mel = tens["mel"].float()
 
             wav_path = out_dir / (pt_path.stem + ".wav")
