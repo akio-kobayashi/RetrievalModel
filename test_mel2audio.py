@@ -55,7 +55,7 @@ def mel2wav(
 
     audio = torch.clamp(audio, -1.0, 1.0) * max_wav_value
     #print(audio.shape)
-    torchaudio.save(wav_path, audio.squeeze(0).short().cpu(), 16000)
+    torchaudio.save(wav_path, audio.squeeze(0).short().cpu(), 22050)
     print("✓", wav_path)
 
 # ---------------------------------------------------------------------------
