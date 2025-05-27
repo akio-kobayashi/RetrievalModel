@@ -56,7 +56,7 @@ def main(args):
         })
 
     # 新CSVに保存
-    new_csv_path = Path(args.new_csv)
+    new_csv_path = Path(args.output_csv)
     pd.DataFrame(new_rows).to_csv(new_csv_path, index=False)
     print(f"\n✔ Saved new CSV to: {new_csv_path}")
 
