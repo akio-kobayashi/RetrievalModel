@@ -70,7 +70,7 @@ class VCMelDataset(Dataset):
 
         hubert: torch.Tensor = pt["hubert"].float()   # (T, 768)
         pitch:  torch.Tensor = pt["log_f0"].float()   # (T,)
-        mel:    torch.Tensor = pt["mel"].float()      # (80, T) or (T, 80)
+        mel:    torch.Tensor = pt["mel"].float().squeeze()      # (80, T) or (T, 80)
 
         # ensure mel is (T, 80)
         if mel.ndim != 2:

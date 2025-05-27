@@ -83,7 +83,7 @@ def main(args):
             tens = torch.load(r["hubert"], map_location="cpu")
             hubert = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
-            ref = tens["mel"]
+            ref = tens["mel"].squeeze()
             pitch  = (pitch - pitch_mean) / (pitch_std + 1e-9)
             print(wav.shape)
             print(hubert.shape)

@@ -188,7 +188,7 @@ class MelMultiScaleDiscriminator(nn.Module):
 # Full RVC model (Encoder + Generator)
 # --------------------------------------------------
 class RVCStyleVC(nn.Module):
-    def __init__(self, latent_ch=256, d_model=256, n_conformer=4, nhead=4):
+    def __init__(self, latent_ch=256, d_model=256, n_conformer=8, nhead=8):
         super().__init__()
         self.encoder = PosteriorEncoder(latent_ch)
         self.generator = ConformerGenerator(in_ch=latent_ch, d_model=d_model, n_conformer=n_conformer, nhead=nhead)

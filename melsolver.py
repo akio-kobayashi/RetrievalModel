@@ -79,7 +79,7 @@ class MelVCSystem(pl.LightningModule):
             self.manual_backward(loss_mel)
             if (batch_idx + 1) % self.grad_accum == 0:
                 opt_g.step(); opt_g.zero_grad()
-            self.log_dict({"phase": "warm", "loss_mel": loss_mel}, prog_bar=True, on_step=True)
+            self.log_dict({"loss_mel": loss_mel}, prog_bar=True, on_step=True)
             return loss_mel
 
         # --------------------------------------------------
@@ -125,7 +125,6 @@ class MelVCSystem(pl.LightningModule):
             opt_g.step(); opt_g.zero_grad()
 
         self.log_dict({
-            "phase": "gan",
             "loss_d": loss_d,
             "loss_adv": loss_adv,
             "loss_fm": loss_fm,
