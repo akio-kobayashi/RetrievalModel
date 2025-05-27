@@ -19,12 +19,11 @@ import argparse
 import csv
 from pathlib import Path
 from typing import Dict, List
-
+import torchaudio
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-
-from model import RVCStyleVC      # Generator that outputs mel (B,T,80)
+from melmodel import RVCStyleVC      # Generator that outputs mel (B,T,80)
 
 # -----------------------------------------------------------------------------
 # Utility
@@ -80,14 +79,18 @@ def main(args):
     with torch.no_grad():
         for r in rows:
             key = r["key"]
+            wav,_ = torchaudio.load(r["wave"])
             tens = torch.load(r["hubert"], map_location="cpu")
             hubert = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
+            ref = tens["mel"]
             pitch  = (pitch - pitch_mean) / (pitch_std + 1e-9)
-
+            print(wav.shape)
+            print(hubert.shape)
+            print(ref.transpose(0, 1).shape)
             # ---------- Generator forward ----------
-            mel = gen(hubert, pitch).cpu().squeeze(0)         # (T, 80)
-
+            mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
+            print(mel.shape)
             # inverse-norm
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip

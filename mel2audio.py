@@ -1,15 +1,15 @@
 import torch
 import pytorch_lightning as pl
-from lightning.pytorch.loggers import TensorBoardLogger
+#from lightning.pytorch.loggers import TensorBoardLogger
 import torch.utils.data as data
-from solver import LitGAN
+from melsolver import MelVCSystem
 import torch.utils.data as dat
 import torch.multiprocessing as mp
 import torchaudio
 #from speech_dataset import SpeechDataset
-import utils.split_tensor as S
+#import utils.split_tensor as S
 #import speech_dataset
-import bin.compute_features as C
+#import bin.compute_features as C
 from einops import rearrange
 from argparse import ArgumentParser
 import yaml
@@ -28,6 +28,7 @@ def main(args):
 
     for path in glob.glob(args.dir+'/**.pt', recursive=True):
         mel = torch.load(path).to(device)
+        mel = rearrange(mel, '(b t) c -> b c t', b=1)
         denoising_strength = 0.005
         audio = hifigan(mel).float()
         audio = denoiser(audio.squeeze(1), denoising_strength)

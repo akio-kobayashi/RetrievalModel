@@ -85,7 +85,7 @@ class ConformerGenerator(nn.Module):
         n_conformer=4,
         nhead=4,
         dropout=0.1,
-        upsample_factor=1.25,
+        upsample_factor=1.72,
         align_to_length: int = None,  # 推論時ターゲット長（系列長が異なる場合用）
     ):
         super().__init__()
