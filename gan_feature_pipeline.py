@@ -10,6 +10,9 @@ from einops import rearrange
 import warnings
 warnings.filterwarnings('ignore')
 
+mel_basis = {}
+hann_window = {}
+
 def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
     return torch.log(torch.clamp(x, min=clip_val) * C)
 
