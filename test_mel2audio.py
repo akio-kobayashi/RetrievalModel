@@ -74,7 +74,7 @@ def main(args):
             pt_path = Path(row["hubert"])
             tens = torch.load(pt_path, map_location=device)
             mel = tens["mel"].float()
-
+            mel = mel.squeeze()
             wav_path = out_dir / (pt_path.stem + ".wav")
 
             mel2wav(
