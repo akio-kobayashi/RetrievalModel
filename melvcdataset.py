@@ -4,29 +4,25 @@ from typing import List, Tuple, Dict, Optional
 
 import torch
 from torch.utils.data import Dataset
-import math
 from einops import rearrange
 
 class VCMelDataset(Dataset):
     """
-    Return (hubert, pitch, mel) with global normalization and HuBERT基準ランダムクロップ.
+    Return **full‑length** (hubert, pitch, mel) tuples.
 
-    - waveファイル不要
-    - hubert, pitch, mel は.ptに保存
-    - pitch系列長はhubertと常に一致
-    - melはHiFiGANスペック
-    - max_sec=None なら全長返す（評価時用）
+    * HuBERT / pitch / mel are pre‑computed .pt tensors.
+    * No random cropping – every sample is returned as‑is.
+    * Pitch series length must equal HuBERT length.
+    * Mel is HiFi‑GAN spec (hop = 256).  Saved as (80, T) or (T, 80).
     """
 
     def __init__(
         self,
         csv_path: str | Path,
         stats_tensor: Dict[str, float],
-        hubert_hop: int = 320,
-        mel_hop: int = 256,
-        max_sec: Optional[float] = 2.0,
         sr: int = 16000,
     ) -> None:
+        # ─── load CSV rows ────────────────────────────────────────────
         self.rows: List[Dict[str, str]] = []
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -35,102 +31,82 @@ class VCMelDataset(Dataset):
                     raise ValueError("CSV must have 'hubert' column")
                 self.rows.append(r)
 
-        self.hubert_hop = hubert_hop
-        self.mel_hop = mel_hop
-        self.sr = sr
-        self.max_frames = int(max_sec * sr // hubert_hop) if max_sec else None
-
-        # pitch正規化
-        if "pitch_mean" in stats_tensor and "pitch_std" in stats_tensor:
+        # ─── statistics ───────────────────────────────────────────────
+        if {"pitch_mean", "pitch_std", "mel_mean", "mel_std"}.issubset(stats_tensor.keys()):
             self.pitch_mean = float(stats_tensor["pitch_mean"])
             self.pitch_std  = float(stats_tensor["pitch_std"]) + 1e-9
+            self.mel_mean   = torch.as_tensor(stats_tensor["mel_mean"], dtype=torch.float).view(1, -1)
+            self.mel_std    = torch.as_tensor(stats_tensor["mel_std" ], dtype=torch.float).view(1, -1) + 1e-9
         else:
-            f0_list = []
-            for row in self.rows:
-                pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
-                f0_list.append(pt["log_f0"].float())
-            cat = torch.cat(f0_list)
-            self.pitch_mean = cat.mean().item()
-            self.pitch_std  = cat.std(unbiased=False).item() + 1e-9
+            self._compute_stats(stats_tensor)
 
-        # mel正規化（ベクトル, 各次元単位）
-        if "mel_mean" in stats_tensor and "mel_std" in stats_tensor:
-            self.mel_mean = rearrange(torch.as_tensor(stats_tensor["mel_mean"]).float(), '(b c) -> b c', b=1)
-            self.mel_std  = rearrange(torch.as_tensor(stats_tensor["mel_std"]).float() + 1e-9, '(b c) -> b c', b=1)
-        else:
-            mel_list = []
-            for row in self.rows:
-                pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
-                mel = pt["mel"].float()
-                if mel.size(0) == 80 and mel.size(1) != 80:
-                  mel = mel.transpose(0, 1)
+    # ------------------------------------------------------------------
+    def _compute_stats(self, stats_tensor: Dict[str, float]):
+        """Derive mean / std from all rows (slow ‑ one‑off)."""
+        f0_list, mel_list = [], []
+        for row in self.rows:
+            pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
+            f0_list.append(pt["log_f0"].float())
+            mel = pt["mel"].float()
+            if mel.size(0) == 80:          # stored as (80, T)
+                mel = mel.transpose(0, 1)
+            if mel.size(1) != 80:
+                raise ValueError(f"Unexpected mel shape: {mel.shape}")
+            mel_list.append(mel)
+        f0_cat = torch.cat(f0_list)
+        mel_cat = torch.cat(mel_list, dim=0)
+        self.pitch_mean = f0_cat.mean().item()
+        self.pitch_std  = f0_cat.std(unbiased=False).item() + 1e-9
+        self.mel_mean   = mel_cat.mean(dim=0, keepdim=True)
+        self.mel_std    = mel_cat.std (dim=0, unbiased=False, keepdim=True) + 1e-9
 
-                if mel.ndim != 2 or mel.size(1) != 80:
-                  raise ValueError(f"Unexpected mel shape: {mel.shape}")
-                mel_list.append(mel)
-            cat = torch.cat(mel_list, dim=0)
-            self.mel_mean = rearrange(cat.mean(dim=0), '(b c)-> b c', b=1)
-            self.mel_std  = rearrange(cat.std(dim=0, unbiased=False) + 1e-9, '(b c)->b c', b=1)
-
+    # ------------------------------------------------------------------
     def __len__(self):
         return len(self.rows)
 
     def __getitem__(self, idx: int):
-      row = self.rows[idx]
-      pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
+        row = self.rows[idx]
+        pt = torch.load(row["hubert"], map_location="cpu", weights_only=True)
 
-      # ── 入力テンソル ─────────────────────────────
-      hubert: torch.Tensor = pt["hubert"].float()   # (T, 768)
-      pitch:  torch.Tensor = pt["log_f0"].float()   # (T,)
-      mel:    torch.Tensor = pt["mel"].float()      # (M, T) ← メル軸が先
+        hubert: torch.Tensor = pt["hubert"].float()   # (T, 768)
+        pitch:  torch.Tensor = pt["log_f0"].float()   # (T,)
+        mel:    torch.Tensor = pt["mel"].float()      # (80, T) or (T, 80)
 
-      # ── 必ず (T, M) に転置 ──────────────────────
-      if mel.ndim != 2:
-          raise ValueError(f"mel tensor must be 2-D, got {mel.shape}")
-      mel = mel.transpose(0, 1).contiguous()        # (T_raw, M_raw)
+        # ensure mel is (T, 80)
+        if mel.ndim != 2:
+            raise ValueError(f"mel tensor must be 2‑D, got {mel.shape}")
+        if mel.size(0) == 80 and mel.size(1) != 80:
+            mel = mel.transpose(0, 1)
+        if mel.size(1) != 80:
+            raise ValueError(f"Unexpected mel shape after transpose: {mel.shape}")
 
-      # ── ランダムクロップ（HuBERT 時間基準） ─────
-      T = hubert.size(0)
-      max_frames = self.max_frames or T
-      t0 = torch.randint(0, T - max_frames + 1, (1,)).item() if T > max_frames else 0
-      t1 = min(t0 + max_frames, T)
+        # normalise
+        pitch_norm = (pitch - self.pitch_mean) / self.pitch_std
+        mel_norm   = (mel   - self.mel_mean)  / self.mel_std
 
-      hubert_crop = hubert[t0:t1]                   # (T_crop, 768)
-      pitch_crop  = pitch[t0:t1]                    # (T_crop,)
-      pitch_norm  = (pitch_crop - self.pitch_mean) / self.pitch_std
+        return hubert, pitch_norm, mel_norm
 
-      # ── HuBERT ↔ サンプル ↔ mel 時間対応 ────────
-      start_sample = t0 * self.hubert_hop
-      end_sample   = t1 * self.hubert_hop
-      mel_start = int(math.floor(start_sample / self.mel_hop))
-      mel_end   = int(math.floor(end_sample   / self.mel_hop))
-
-      mel_crop = mel[mel_start:mel_end]             # (T_mel, M_raw)
-      mel_norm = (mel_crop - self.mel_mean) / self.mel_std
-
-      return hubert_crop, pitch_norm, mel_norm
-
+# ---------------------------------------------------------------------------
+# Collate: pad to longest sequence in batch (unchanged)
+# ---------------------------------------------------------------------------
 
 def data_processing(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
-  huberts, pitches, mels = zip(*batch)
-  B = len(batch)
-  T_max = max(h.size(0) for h in huberts)
-  D = huberts[0].size(1)
+    huberts, pitches, mels = zip(*batch)
+    B = len(batch)
+    T_max = max(h.size(0) for h in huberts)
+    D = huberts[0].size(1)
+    M = 80
 
-  # メルスペクトルの次元数を取得（0行ならデフォルト80）
-  M = mels[0].size(1) if mels[0].size(0) > 0 else 80
+    h_pad = torch.zeros(B, T_max, D)
+    p_pad = torch.zeros(B, T_max)
+    m_pad = torch.zeros(B, max(m.size(0) for m in mels), M)
 
-  h_pad = torch.zeros(B, T_max, D)
-  p_pad = torch.zeros(B, T_max)
-  m_pad = torch.zeros(B, max(m.size(0) for m in mels), M)
+    for i, (h, p, m) in enumerate(batch):
+        h_pad[i, :h.size(0)] = h
+        p_pad[i, :p.size(0)] = p
+        m_pad[i, :m.size(0)] = m
 
-  for i, (h, p, m) in enumerate(batch):
-      h_pad[i, :h.size(0)] = h
-      p_pad[i, :p.size(0)] = p
-      m_pad[i, :m.size(0)] = m
-
-  return h_pad, p_pad, m_pad
-
+    return h_pad, p_pad, m_pad
 
 # ------------------------------------------------------------
 #  Stand-alone test

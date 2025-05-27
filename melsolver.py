@@ -3,10 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from melmodel import RVCStyleVC, MelMultiPeriodDiscriminator, MelMultiScaleDiscriminator
+from melmodel import (
+    RVCStyleVC,
+    MelMultiPeriodDiscriminator,
+    MelMultiScaleDiscriminator,
+)
 
 class MelVCSystem(pl.LightningModule):
-    """Conformer‑based Mel GAN: 2段階学習（ウォームアップL1→GAN+FM）."""
+    """Full‑length Conformer‑based Mel GAN (Warm‑up L1  →  GAN+FM)."""
 
     def __init__(
         self,
@@ -18,7 +22,7 @@ class MelVCSystem(pl.LightningModule):
         sched_gamma: float = 0.5,
         sched_step: int = 200,
         grad_accum: int = 1,
-        warmup_epochs: int = 10,    # ウォームアップ期間（エポック数）
+        warmup_epochs: int = 10,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -30,9 +34,13 @@ class MelVCSystem(pl.LightningModule):
         self.disc_mpd = MelMultiPeriodDiscriminator()
         self.disc_msd = MelMultiScaleDiscriminator()
 
+    # --------------------------------------------------
+    # helper losses
+    # --------------------------------------------------
     @staticmethod
     def _adv_d(real, fake):
-        return sum(F.mse_loss(r, torch.ones_like(r)) + F.mse_loss(f, torch.zeros_like(f)) for r, f in zip(real, fake)) / len(real)
+        return sum(F.mse_loss(r, torch.ones_like(r)) + F.mse_loss(f, torch.zeros_like(f))
+                   for r, f in zip(real, fake)) / len(real)
 
     @staticmethod
     def _adv_g(fake):
@@ -41,135 +49,115 @@ class MelVCSystem(pl.LightningModule):
     @staticmethod
     def _feat_match(real_feats, fake_feats):
         loss, cnt = 0.0, 0
-        for r_list, f_list in zip(real_feats, fake_feats):
-            for r, f in zip(r_list, f_list):
+        for r_lv, f_lv in zip(real_feats, fake_feats):
+            for r, f in zip(r_lv, f_lv):
                 L = min(r.size(-1), f.size(-1))
                 loss += F.l1_loss(f[..., :L], r[..., :L])
                 cnt += 1
         return loss / max(cnt, 1)
 
+    # --------------------------------------------------
+    # forward helpers
+    # --------------------------------------------------
     def forward(self, hubert, pitch, target_length):
         return self.gen(hubert, pitch, target_length=target_length)
 
+    # --------------------------------------------------
     def training_step(self, batch, batch_idx):
-        hub, pit, mel_real = batch
+        hub, pit, mel_real = batch  # mel_real: (B,T,80)
         opt_g, opt_d = self.optimizers()
 
-        # 1) まず両方のオプティマイザをゼロ化
-        opt_d.zero_grad()
-        opt_g.zero_grad()
+        # zero‑grad both
+        opt_g.zero_grad(); opt_d.zero_grad()
 
+        # --------------------------------------------------
+        # 1) warm‑up : only L1
+        # --------------------------------------------------
         if self.current_epoch < self.warmup_epochs:
-          # Generator前向き
-          mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
-          mel_fake_c = mel_fake[:, :mel_real.size(1)]
-          # L1損失
-          loss_mel = F.l1_loss(mel_fake_c, mel_real) / self.grad_accum
-          # backward & step（Gのみ）
-          self.manual_backward(loss_mel)
-          if (batch_idx + 1) % self.grad_accum == 0:
-              opt_g.step()
-              opt_g.zero_grad()
-          # ログ
-          self.log_dict({
-              "loss_mel": loss_mel,
-          }, prog_bar=True, on_step=True)
-          return loss_mel
+            mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
+            loss_mel = F.l1_loss(mel_fake, mel_real) / self.grad_accum
+            self.manual_backward(loss_mel)
+            if (batch_idx + 1) % self.grad_accum == 0:
+                opt_g.step(); opt_g.zero_grad()
+            self.log_dict({"phase": "warm", "loss_mel": loss_mel}, prog_bar=True, on_step=True)
+            return loss_mel
 
-        # ------- Discriminator 更新フェーズ -------
-        # ジェネレータからの出力を得て、判別器にはdetachして渡す
-        mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
-        mel_fake_c = mel_fake[:, :mel_real.size(1)]
-        # (B, T, M) -> (B, M, T)
-        fake_input = mel_fake_c.transpose(1, 2).detach()
-        real_input = mel_real.transpose(1, 2)
+        # --------------------------------------------------
+        # 2) discriminator update
+        # --------------------------------------------------
+        with torch.no_grad():
+            mel_fake_det = self.gen(hub, pit, target_length=mel_real.size(1))  # detach later
+        fake_in = mel_fake_det.transpose(1, 2).detach()  # (B,80,T)
+        real_in = mel_real.transpose(1, 2)
 
-        fk_mpd, fk_feat_mpd = self.disc_mpd(fake_input)
-        rl_mpd, rl_feat_mpd = self.disc_mpd(real_input)
-        loss_d_mpd = self._adv_d(rl_mpd, fk_mpd)
+        fk_mpd, _ = self.disc_mpd(fake_in)
+        rl_mpd, _ = self.disc_mpd(real_in)
+        fk_msd, _ = self.disc_msd(fake_in)
+        rl_msd, _ = self.disc_msd(real_in)
 
-        fk_msd, fk_feat_msd = self.disc_msd(fake_input)
-        rl_msd, rl_feat_msd = self.disc_msd(real_input)
-        loss_d_msd = self._adv_d(rl_msd, fk_msd)
-
-        loss_d = (loss_d_mpd + loss_d_msd) / self.grad_accum
-
-        # backward & step for D
+        loss_d = (self._adv_d(rl_mpd, fk_mpd) + self._adv_d(rl_msd, fk_msd)) / self.grad_accum
         self.manual_backward(loss_d)
-        opt_d.step()
-        opt_d.zero_grad()
+        if (batch_idx + 1) % self.grad_accum == 0:
+            opt_d.step(); opt_d.zero_grad()
 
-        # ------- Generator 更新フェーズ -------
-        # （重要）再度ジェネレータをフォワードして新しいグラフを構築
-        mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
-        mel_fake_c = mel_fake[:, :mel_real.size(1)]
-        fake_input = mel_fake_c.transpose(1, 2)  # 今度は detach しない
+        # --------------------------------------------------
+        # 3) generator update (fresh forward)
+        # --------------------------------------------------
+        mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))  # new graph
+        fake_in = mel_fake.transpose(1, 2)
+        real_in = mel_real.transpose(1, 2)
 
-        real_input = mel_real.transpose(1, 2)
-        _, rl_feat_mpd = self.disc_mpd(real_input)
-        _, rl_feat_msd = self.disc_msd(real_input)
+        fk_mpd, fk_feat_mpd = self.disc_mpd(fake_in)
+        fk_msd, fk_feat_msd = self.disc_msd(fake_in)
+        _,  rl_feat_mpd     = self.disc_mpd(real_in)
+        _,  rl_feat_msd     = self.disc_msd(real_in)
 
-        fk_mpd, fk_feat_mpd = self.disc_mpd(fake_input)
-        fk_msd, fk_feat_msd = self.disc_msd(fake_input)
-        
         loss_adv = (self._adv_g(fk_mpd) + self._adv_g(fk_msd)) / self.grad_accum
-        loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
-
-        # Adversarial loss
-        #fk_mpd, _ = self.disc_mpd(fake_input)
-        #fk_msd, _ = self.disc_msd(fake_input)
-        #loss_adv = (self._adv_g(fk_mpd) + self._adv_g(fk_msd)) / self.grad_accum
-
-        # Feature matching loss
-        #loss_fm = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
-
-        # L1 Mel loss
-        loss_mel = F.l1_loss(mel_fake_c, mel_real) / self.grad_accum
+        loss_fm  = self._feat_match(rl_feat_mpd, fk_feat_mpd) + self._feat_match(rl_feat_msd, fk_feat_msd)
+        loss_mel = F.l1_loss(mel_fake, mel_real) / self.grad_accum
 
         loss_g = (self.hparams.lambda_mel * loss_mel +
-                  self.hparams.lambda_fm  * loss_fm +
+                  self.hparams.lambda_fm  * loss_fm  +
                   self.hparams.lambda_adv * loss_adv)
 
-        # backward & step for G
         self.manual_backward(loss_g)
-        opt_g.step()
+        if (batch_idx + 1) % self.grad_accum == 0:
+            opt_g.step(); opt_g.zero_grad()
 
-        # ログは一度にまとめて
         self.log_dict({
+            "phase": "gan",
             "loss_d": loss_d,
             "loss_adv": loss_adv,
-            "loss_fm":   loss_fm,
-            "loss_mel":  loss_mel,
-            "loss_g":    loss_g
+            "loss_fm": loss_fm,
+            "loss_mel": loss_mel,
+            "loss_g": loss_g,
         }, prog_bar=True, on_step=True)
-
         return loss_g
 
+    # --------------------------------------------------
     @torch.no_grad()
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         hub, pit, mel_real = batch
         mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
-        cut_len = min(mel_real.size(1), mel_fake.size(1))
-        mel_real_c = mel_real[:, :cut_len]
-        mel_fake_c = mel_fake[:, :cut_len]
-        val_mel = F.l1_loss(mel_fake_c, mel_real_c)
+        val_mel = F.l1_loss(mel_fake, mel_real)
         self.log("val_mel", val_mel, prog_bar=True)
 
+    # --------------------------------------------------
     def configure_optimizers(self):
         opt_g = torch.optim.AdamW(self.gen.parameters(), lr=self.hparams.lr_g, betas=(0.8, 0.99))
-        opt_d = torch.optim.AdamW(list(self.disc_mpd.parameters()) + list(self.disc_msd.parameters()), lr=self.hparams.lr_d, betas=(0.8, 0.99))
-        sched_g = torch.optim.lr_scheduler.StepLR(opt_g, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
-        sched_d = torch.optim.lr_scheduler.StepLR(opt_d, step_size=self.hparams.sched_step, gamma=self.hparams.sched_gamma)
+        opt_d = torch.optim.AdamW([
+            *self.disc_mpd.parameters(), *self.disc_msd.parameters()
+        ], lr=self.hparams.lr_d, betas=(0.8, 0.99))
+        sch_g = torch.optim.lr_scheduler.StepLR(opt_g, self.hparams.sched_step, gamma=self.hparams.sched_gamma)
+        sch_d = torch.optim.lr_scheduler.StepLR(opt_d, self.hparams.sched_step, gamma=self.hparams.sched_gamma)
         return ([opt_g, opt_d], [
-            {"scheduler": sched_g, "interval": "step"},
-            {"scheduler": sched_d, "interval": "step"},
+            {"scheduler": sch_g, "interval": "step"},
+            {"scheduler": sch_d, "interval": "step"},
         ])
-    
+
+    # --------------------------------------------------
     @torch.no_grad()
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-      hubert, pitch, _ = batch  # mel は不要
-      z = self.gen.encoder(hubert, pitch)  # (B, C, T)
-
-
-      mel = self.gen.generator(z)  # 明示補間推論
-      return mel
+    def predict_step(self, batch, *_):
+        hubert, pitch, _ = batch
+        mel = self.gen(hubert, pitch, target_length=None)  # length auto by upsample_factor
+        return mel

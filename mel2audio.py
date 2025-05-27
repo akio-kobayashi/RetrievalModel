@@ -1,47 +1,94 @@
-import torch
-import pytorch_lightning as pl
-#from lightning.pytorch.loggers import TensorBoardLogger
-import torch.utils.data as data
-from melsolver import MelVCSystem
-import torch.utils.data as dat
-import torch.multiprocessing as mp
-import torchaudio
-#from speech_dataset import SpeechDataset
-#import utils.split_tensor as S
-#import speech_dataset
-#import bin.compute_features as C
-from einops import rearrange
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Convert *.pt mel-spectrogram files (shape: [T, 80]) to 22.05-kHz waveforms
+using NVIDIA/HiFi-GAN torch-hub model.
+"""
+from __future__ import annotations
+
+import glob, os, warnings
 from argparse import ArgumentParser
-import yaml
-import pandas as pd
-import warnings
-warnings.filterwarnings('ignore')
-import glob
-import os, sys
+from pathlib import Path
+
+import torch
+import torchaudio
+from einops import rearrange
+
+warnings.filterwarnings("ignore")
+
+# ---------------------------------------------------------------------------
+
+def load_hifigan(device: torch.device):
+    """Load pre-trained HiFi-GAN (22.05 kHz, mel-hop 256)."""
+    hifigan, train_setup, denoiser = torch.hub.load(
+        "NVIDIA/DeepLearningExamples:torchhub", "nvidia_hifigan"
+    )
+    return hifigan.to(device), train_setup, denoiser.to(device)
+
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def mel2wav(
+    mel_path: Path,
+    hifigan,
+    denoiser,
+    max_wav_value: float,
+    denoise: float,
+    out_dir: Path,
+):
+    """
+    • mel_path : .pt file, tensor shape (T, 80)  or  (80, T)
+    • Saves <same-name>.wav to out_dir
+    """
+    mel: torch.Tensor = torch.load(mel_path).float()  # (T,80) or (80,T)
+    if mel.ndim != 2:
+        raise ValueError(f"{mel_path.name}: expected 2-D tensor, got {mel.shape}")
+    if mel.size(1) == 80:              # (T,80)
+        mel = mel.transpose(0, 1)      # → (80,T)
+    if mel.size(0) != 80:
+        raise ValueError(f"{mel_path.name}: mel dim != 80 after transpose: {mel.shape}")
+
+    mel = mel.unsqueeze(0)             # (1,80,T)
+    audio = hifigan(mel).squeeze(1)    # (1,T') → (1,T')
+
+    if denoise > 0:
+        audio = denoiser(audio, denoise)
+
+    audio = torch.clamp(audio, -1.0, 1.0) * max_wav_value   # scale to int16 range
+    wav_path = out_dir / (mel_path.stem + ".wav")
+    torchaudio.save(wav_path, audio.short().cpu(), 22050)
+    print("✓", wav_path)
+
+# ---------------------------------------------------------------------------
 
 def main(args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    hifigan, setup, denoiser = load_hifigan(device)
+    max_wav_value = setup["max_wav_value"]
 
-    hifigan, vocoder_train_setup, denoiser = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_hifigan')
-    hifigan.to(device)
-    denoiser.to(device)
+    in_dir  = Path(args.dir)
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    for path in glob.glob(args.dir+'/**.pt', recursive=True):
-        mel = torch.load(path).to(device)
-        mel = rearrange(mel, '(b t) c -> b c t', b=1)
-        denoising_strength = 0.005
-        audio = hifigan(mel).float()
-        audio = denoiser(audio.squeeze(1), denoising_strength)
-        audio = torch.clamp(audio.squeeze(1), -1.0, 1.0) * vocoder_train_setup['max_wav_value']
-        outpath=os.path.join(args.output_dir, os.path.splitext(os.path.basename(path))[0] + '.wav')
-        torchaudio.save(uri=outpath, src=audio.short().to('cpu'), sample_rate=22050)
+    for pt_file in sorted(in_dir.glob("**/*.pt")):
+        mel2wav(
+            pt_file,
+            hifigan,
+            denoiser,
+            max_wav_value,
+            args.denoising_strength,
+            out_dir,
+        )
 
-if __name__ == '__main__':
-    torch.multiprocessing.set_start_method('spawn', force=True)
-    parser = ArgumentParser()
-    parser.add_argument('--dir', type=str, required=True)
-    parser.add_argument('--denoising_strength', type=float, default=0.005)
-    parser.add_argument('--output_dir', type=str, default='./')
-    args=parser.parse_args()
-       
-    main(args) 
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    torch.multiprocessing.set_start_method("spawn", force=True)
+
+    parser = ArgumentParser(description="Convert mel *.pt → wav using HiFi-GAN")
+    parser.add_argument("--dir", type=str, required=True, help="directory with *.pt mels")
+    parser.add_argument("--output_dir", type=str, default="./wav_out", help="save dir")
+    parser.add_argument("--denoising_strength", type=float, default=0.005)
+    args = parser.parse_args()
+
+    main(args)
