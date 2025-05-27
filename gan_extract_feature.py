@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 import warnings
 warnings.filterwarnings('ignore')
 
-from feature_pipeline import get_mel_spectrogram  # 古い仕様のHiFiGAN互換
+from gan_feature_pipeline import get_mel_spectrogram  # 古い仕様のHiFiGAN互換
 
 def replace_mel_in_tensor(wave_path, tensor_path, save_path):
     """
