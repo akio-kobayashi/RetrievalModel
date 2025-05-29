@@ -93,9 +93,9 @@ def main(args):
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
             # inverse-norm
+            loss = F.l1_loss(mel.cuda(), ref.transpose(0, 1).cuda()).cpu().detach().numpy().item()
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
-            loss = F.l1_loss(mel.cuda(), ref.transpose(0, 1).cuda()).cpu().detach().numpy().item()
             print(loss)
             # ---------- save ----------
             out_pt = args.out_dir / f"{key}_gen.pt"
