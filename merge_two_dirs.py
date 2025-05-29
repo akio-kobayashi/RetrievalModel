@@ -9,7 +9,7 @@ import torch
 
 def main(args):
 
-  keys, srcs, tgts = [], []
+  keys, srcs, tgts = [], [], []
   source_files = {}
   for dir in args.source:
     for idx, filepath in enumerate(sorted(glob.glob(os.path.join(dir, '*.pt'))), start=1):
@@ -33,7 +33,7 @@ def main(args):
     tgt_dict = torch.load(row['target'], map_location='cpu')
     tgt_hubert = tgt_dict['hubert'].float()   # (T_src, 768)
     print(src_hubert.shape, tgt_hubert.shape)
-    
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--source', type=str, required=True)
