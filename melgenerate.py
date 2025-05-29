@@ -95,7 +95,7 @@ def main(args):
             # inverse-norm
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
-            loss = F.l1_loss(mel, ref.transpose(0, 1)).detach().numpy().item()
+            loss = F.l1_loss(mel, ref.transpose(0, 1).cuda()).detach().numpy().item()
             print(loss)
             # ---------- save ----------
             out_pt = args.out_dir / f"{key}_gen.pt"
