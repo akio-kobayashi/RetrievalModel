@@ -11,20 +11,16 @@ def main(args):
 
   keys, srcs, tgts = [], [], []
   source_files = {}
-  for dir in args.source:
-    for idx, filepath in enumerate(sorted(glob.glob(os.path.join(dir, '*.pt'))), start=1):
-      key = os.path.splitext(os.path.basename(filepath))[0].replace('_fake', '')
-      print(key)
-      source_files[key] = filepath
+  for idx, filepath in enumerate(sorted(glob.glob(os.path.join(args.source, '*.pt'))), start=1):
+    key = os.path.splitext(os.path.basename(filepath))[0].replace('_fake', '')
+    source_files[key] = filepath
 
-  for dir in args.target:
-    for idx, filepath in enumerate(sorted(glob.glob(os.path.join(dir, '*.pt'))), start=1):
-      key = os.path.splitext(os.path.basename(filepath))[0].replace('_fake', '')
-      if key in source_files.keys():
-        print(key)
-        keys.append(key)
-        srcs.append(source_files[key])
-        tgts.append(filepath)
+  for idx, filepath in enumerate(sorted(glob.glob(os.path.join(args.target, '*.pt'))), start=1):
+    key = os.path.splitext(os.path.basename(filepath))[0].replace('_fake', '')
+    if key in source_files.keys():
+      keys.append(key)
+      srcs.append(source_files[key])
+      tgts.append(filepath)
 
   result = pd.DataFrame.from_dict({'key': keys, 'source': srcs, 'target': tgts })
   result.to_csv(args.output_csv, index=False)
