@@ -80,7 +80,7 @@ def main(args):
         for r in rows:
             key = r["key"]
             wav,_ = torchaudio.load(r["wave"])
-            tens = torch.load(r["hubert"], map_location="cpu")
+            tens = torch.load(r["hubert"], map_location=device)
             hubert = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
             ref = tens["mel"].squeeze()

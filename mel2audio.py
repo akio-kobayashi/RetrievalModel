@@ -16,6 +16,37 @@ from einops import rearrange
 
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_mel_spectrogram_to_file(mel_tensor, filename="mel_output.png", sr=22050, hop_length=256):
+    """
+    mel_tensor: torch.Tensor or np.ndarray, shape = (n_mel, T)
+    filename: 出力画像ファイル名
+    sr: サンプリングレート（時間軸表示用）
+    hop_length: フレームあたりのサンプル数（時間軸表示用）
+    """
+    if isinstance(mel_tensor, torch.Tensor):
+        mel_tensor = mel_tensor.detach().cpu().numpy()
+
+    plt.figure(figsize=(10, 4))
+    plt.imshow(mel_tensor, origin='lower', aspect='auto', cmap='magma', interpolation='none')
+    plt.title("Generated Mel Spectrogram")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Mel Channels")
+    
+    num_frames = mel_tensor.shape[1]
+    xticks = np.linspace(0, num_frames, 5)
+    xticklabels = [f"{(hop_length * x) / sr:.2f}" for x in xticks]
+    plt.xticks(xticks, xticklabels)
+
+    plt.colorbar(label="Amplitude (log scale)")
+    plt.tight_layout()
+
+    # PNGで保存
+    plt.savefig(filename, dpi=300)
+    plt.close()
+    
 # ---------------------------------------------------------------------------
 
 def load_hifigan(device: torch.device):
@@ -29,6 +60,7 @@ def load_hifigan(device: torch.device):
 
 @torch.no_grad()
 def mel2wav(
+    device,
     mel_path: Path,
     hifigan,
     denoiser,
@@ -40,7 +72,7 @@ def mel2wav(
     • mel_path : .pt file, tensor shape (T, 80)  or  (80, T)
     • Saves <same-name>.wav to out_dir
     """
-    mel: torch.Tensor = torch.load(mel_path).float()  # (T,80) or (80,T)
+    mel: torch.Tensor = torch.load(mel_path).float().to(device)  # (T,80) or (80,T)
     if mel.ndim != 2:
         raise ValueError(f"{mel_path.name}: expected 2-D tensor, got {mel.shape}")
     if mel.size(1) == 80:              # (T,80)
@@ -49,14 +81,19 @@ def mel2wav(
         raise ValueError(f"{mel_path.name}: mel dim != 80 after transpose: {mel.shape}")
 
     mel = mel.unsqueeze(0)             # (1,80,T)
-    audio = hifigan(mel).squeeze(1)    # (1,T') → (1,T')
 
+    png_path = out_dir / (mel_path.stem + ".png")
+    plot_mel_spectrogram_to_file(mel.squeeze(), png_path)
+    
+    audio = hifigan(mel).squeeze(1)    # (1,T') → (1,T')
     if denoise > 0:
         audio = denoiser(audio, denoise)
 
     audio = torch.clamp(audio, -1.0, 1.0) * max_wav_value   # scale to int16 range
+    audio = audio.squeeze(1).short().cpu()
+    #print(f"audio.shape = {audio.shape}, dtype = {audio.dtype}, device = {audio.device}")
     wav_path = out_dir / (mel_path.stem + ".wav")
-    torchaudio.save(wav_path, audio.short().cpu(), 22050)
+    torchaudio.save(wav_path, audio, 22050)
     print("✓", wav_path)
 
 # ---------------------------------------------------------------------------
@@ -72,6 +109,7 @@ def main(args):
 
     for pt_file in sorted(in_dir.glob("**/*.pt")):
         mel2wav(
+            device,
             pt_file,
             hifigan,
             denoiser,
