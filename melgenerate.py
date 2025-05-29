@@ -93,8 +93,8 @@ def main(args):
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
             # inverse-norm
-            ref = (ref.transpose(0, 1).cuda() - mel_mean)  / (mel_std +1e-9)  
-            loss = F.l1_loss(mel.cuda(), ref.transpose(0, 1).cuda()).cpu().detach().numpy().item()
+            ref = (ref.transpose(0, 1) - mel_mean)  / (mel_std +1e-9)  
+            loss = F.l1_loss(mel.cuda(), ref.cuda()).cpu().detach().numpy().item()
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
             print(loss)
