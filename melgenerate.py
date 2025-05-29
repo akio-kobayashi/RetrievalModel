@@ -26,7 +26,6 @@ import matplotlib.pyplot as plt
 from melmodel import RVCStyleVC      # Generator that outputs mel (B,T,80)
 from gan_feature_pipeline import spectral_de_normalize_torch
 import torch.nn.functional as F
-from einops import rearrange
 
 # -----------------------------------------------------------------------------
 # Utility
@@ -86,17 +85,18 @@ def main(args):
             tens = torch.load(r["hubert"], map_location=device)
             hubert = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
-            ref = rearrange(tens["mel"].squeeze(), 'f t -> t f')
+            ref = tens["mel"].squeeze()
             pitch  = (pitch - pitch_mean) / (pitch_std + 1e-9)
             print(wav.shape)
             print(hubert.shape)
+            print(ref.transpose(0, 1).shape)
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
             print(ref.shape, mel.shape)
             # inverse-norm
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
-            loss = F.l1_loss(mel, ref).detach().numpy().item()
+            loss = F.l1_loss(mel, ref.transpose(0, 1)).detach().numpy().item()
             print(loss)
             # ---------- save ----------
             out_pt = args.out_dir / f"{key}_gen.pt"
