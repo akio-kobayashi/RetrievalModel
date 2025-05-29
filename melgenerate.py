@@ -93,18 +93,21 @@ def main(args):
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
             # inverse-norm
-            ref = (ref.transpose(0, 1) - mel_mean)  / (mel_std +1e-9)  
+            ref = (ref.transpose(0, 1).cpu() - mel_mean)  / (mel_std +1e-9)  
             loss = F.l1_loss(mel.cuda(), ref.cuda()).cpu().detach().numpy().item()
             mel = mel * mel_std + mel_mean                    # (T,80)
-            mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
+            #mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
+            ref = ref * mel_std + mel_mean
+            #ref = ref.clamp(min=-4.0, max=4.0)
             print(loss)
             # ---------- save ----------
             out_pt = args.out_dir / f"{key}_gen.pt"
             torch.save(mel, out_pt)
-
             if args.save_png:
                 out_png = args.out_dir / f"{key}_gen.png"
                 save_png(mel.numpy(), out_png)
+                ref_png = args.out_dir / f"{key}_ref.png"
+                save_png(ref.numpy(), ref_png)
 
             print("✓", out_pt)
 
