@@ -1,0 +1,50 @@
+# ======================= h2h_config.yaml =======================
+# Configuration for Hubert-to-Hubert alignment training
+
+# ────────────────────────────────
+#  Dataset
+# ────────────────────────────────
+train_csv:    path/to/train_pairs.csv   # CSV with 'source','target','source_pitch','target_pitch' columns
+map_location: cpu                       # torch.load map_location
+
+# ────────────────────────────────
+#  DataLoader
+# ────────────────────────────────
+batch_size:   8
+num_workers:  4
+
+# ────────────────────────────────
+#  Model / Transformer Hyperparameters
+# ────────────────────────────────
+input_dim_hubert: 768    # HuBERT feature size
+input_dim_pitch:  1      # pitch feature size
+d_model:           256   # Transformer hidden dimension
+nhead:             4     # number of attention heads
+num_layers:        3     # number of encoder/decoder layers
+dim_ff:            512   # feed‐forward hidden dimension
+dropout:           0.1   # dropout rate
+
+# ────────────────────────────────
+#  Loss weights
+# ────────────────────────────────
+diag_w:   1.0    # diagonal attention regularization
+sdtw_w:   1.0    # Soft‐DTW weight
+ce_w:     1.0    # EOS classification weight
+
+# ────────────────────────────────
+#  Optimizer / Training
+# ────────────────────────────────
+lr:           0.0002    # AdamW learning rate
+max_epochs:   100       # total epochs
+gpus:         1         # number of GPUs (or 0 for CPU)
+precision:    16-mixed  # use mixed‐precision training
+
+# ────────────────────────────────
+#  Logging & Checkpoints
+# ────────────────────────────────
+work_dir:    /path/to/experiments/h2h_align      # Lightning default_root_dir
+log_dir:     /path/to/experiments/h2h_align/tb   # TensorBoard logs
+ckpt_dir:    /path/to/experiments/h2h_align/ckpt # ModelCheckpoint directory
+save_top_k:  3                                  # keep top‐3 checkpoints
+check_val_every_n_epoch: 1                       # how often to run validation
+# ===============================================================
