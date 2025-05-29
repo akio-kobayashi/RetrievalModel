@@ -92,7 +92,7 @@ def main(args):
             print(ref.transpose(0, 1).shape)
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
-            print(mel.shape)
+            print(ref.shape, mel.shape)
             # inverse-norm
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
