@@ -83,7 +83,6 @@ def mel2wav(
     mel = mel.unsqueeze(0)             # (1,80,T)
 
     png_path = out_dir / (mel_path.stem + ".png")
-    plot_mel_spectrogram_to_file(mel.squeeze(), png_path)
     
     audio = hifigan(mel).squeeze(1)    # (1,T') → (1,T')
     if denoise > 0:

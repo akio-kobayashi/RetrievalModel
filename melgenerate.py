@@ -25,6 +25,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from melmodel import RVCStyleVC      # Generator that outputs mel (B,T,80)
 from gan_feature_pipeline import spectral_de_normalize_torch
+import torch.nn.functional as F
 
 # -----------------------------------------------------------------------------
 # Utility
@@ -95,8 +96,8 @@ def main(args):
             # inverse-norm
             mel = mel * mel_std + mel_mean                    # (T,80)
             mel = mel.clamp(min=-4.0, max=4.0)                # sanity clip
-
-            mel = spectral_de_normalize_torch(mel)
+            loss = F.l1_loss(mel, ref).detach().numpy().item()
+            print(loss)
             # ---------- save ----------
             out_pt = args.out_dir / f"{key}_gen.pt"
             torch.save(mel, out_pt)
