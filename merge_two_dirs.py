@@ -19,7 +19,7 @@ def main(args):
   for dir in args.target:
     for idx, filepath in enumerate(sorted(glob.glob(os.path.join(dir, '*.pt'))), start=1):
       key = os.path.splitext(os.path.basename(filepath))[0].replace('_fake', '')
-      if key in source_files:
+      if key in source_files.keys():
         keys.append(key)
         srcs.append(source_files[key])
         tgts.append(filepath)
