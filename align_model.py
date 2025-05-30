@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from kornia.losses import SoftDTW
+#from kornia.losses import SoftDTW
 
 # ----------------------------------------------------------------
 # Diagonal mask function (VoiceTransformer style)
@@ -34,14 +34,14 @@ class TransformerAligner(nn.Module):
         dropout: float = 0.1,
         nu: float = 0.3,
         diag_weight: float = 1.0,
-        sdtw_weight: float = 1.0,
+        #sdtw_weight: float = 1.0,
         ce_weight: float = 1.0
     ):
         super().__init__()
         self.d_model = d_model
         self.nu = nu
         self.diag_weight = diag_weight
-        self.sdtw_weight = sdtw_weight
+        #self.sdtw_weight = sdtw_weight
         self.ce_weight = ce_weight
 
         # Shared projections
@@ -87,7 +87,7 @@ class TransformerAligner(nn.Module):
         self.eos_token = nn.Parameter(torch.randn(1, 1, d_model))
 
         # Soft-DTW
-        self.sdtw = SoftDTW()
+        #self.sdtw = SoftDTW()
 
     def forward(self, src_hubert, src_pitch, tgt_hubert, tgt_pitch):
         B, S, _ = src_hubert.size()
@@ -145,21 +145,20 @@ class TransformerAligner(nn.Module):
         dist = torch.abs(pos_t - pos_s).float() / S
         loss_diag = (attn_w * dist.unsqueeze(0)).sum() / B
         # Soft-DTW
-        pf, tl = pred_hubert.permute(0,2,1), tgt_h_pad.permute(0,2,1)
-        loss_sdtw = self.sdtw(pf, tl)
+        #pf, tl = pred_hubert.permute(0,2,1), tgt_h_pad.permute(0,2,1)
+        #loss_sdtw = self.sdtw(pf, tl)
         # EOS CE
         labels = torch.zeros(B, T+1, dtype=torch.long, device=device); labels[:,-1]=1
         loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1))
 
         total = loss_h + loss_p \
               + self.diag_weight * loss_diag \
-              + self.sdtw_weight*loss_sdtw \
               + self.ce_weight*loss_ce
         return total, {
             'hubert_l1': loss_h,
             'pitch_l1': loss_p,
             'diag': loss_diag,
-            'sdtw': loss_sdtw,
+            #'sdtw': loss_sdtw,
             'ce': loss_ce
         }
 
