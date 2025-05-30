@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from soft_dtw import SoftDTW
+from kornia.losses import SoftDTW
 
 # ----------------------------------------------------------------
 # Diagonal mask function (VoiceTransformer style)
