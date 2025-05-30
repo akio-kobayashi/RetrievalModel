@@ -94,10 +94,10 @@ class TransformerAligner(nn.Module):
 
         # Encoder pass with cross fusion of pitch
         for layer in self.encoder_layers:
-            x2, _ = layer['self_attn'](x, x, x)
+            x2, _ = layer['self_attn'](x, x, x, need_weights=False)
             x = x + x2; x = layer['ffn'](x)
             p_stream = self.pitch_proj(src_pitch.unsqueeze(-1))
-            x2p, _ = layer['pitch_attn'](x, p_stream, p_stream)
+            x2p, _ = layer['pitch_attn'](x, p_stream, p_stream, need_weights=False)
             x = x + x2p; x = layer['ffn'](x)
         memory = x
 
@@ -117,9 +117,9 @@ class TransformerAligner(nn.Module):
         attn_w = None
         # Decoder pass
         for layer in self.decoder_layers:
-            x2, _ = layer['self_attn'](x, x, x)
+            x2, _ = layer['self_attn'](x, x, x, need_weights=False)
             x = x + x2; x = layer['ffn'](x)
-            x2p, _ = layer['pitch_attn'](x, pitch_stream, pitch_stream)
+            x2p, _ = layer['pitch_attn'](x, pitch_stream, pitch_stream, need_weights=False)
             x = x + x2p; x = layer['ffn'](x)
             x2m, attn_w = layer['cross_attn'](x, memory, memory, attn_mask=mask)
             x = x + x2m; x = layer['ffn'](x)

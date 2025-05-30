@@ -35,6 +35,7 @@ class AlignTransformerSystem(pl.LightningModule):
             diag_weight=self.hparams.diag_w,
             ce_weight=self.hparams.ce_w
         )
+        self.model.gradient_checkpointing_enable()
 
     def forward(self, src_hubert, src_pitch, tgt_hubert, tgt_pitch):
         return self.model(src_hubert, src_pitch, tgt_hubert, tgt_pitch)
