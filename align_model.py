@@ -20,7 +20,7 @@ def compute_diagonal_mask(T: int, S: int, nu: float = 0.3, device=None) -> torch
     return mask
 
 # ----------------------------------------------------------------
-# Transformer-based Aligner Module with Modality Cross-Attention
+# Transformer-based Aligner Module with Modality Cross-Attention and Diagonal Loss
 # ----------------------------------------------------------------
 class TransformerAligner(nn.Module):
     def __init__(
@@ -40,6 +40,7 @@ class TransformerAligner(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.nu = nu
+        self.diag_weight = diag_weight
         self.sdtw_weight = sdtw_weight
         self.ce_weight = ce_weight
 
@@ -98,14 +99,12 @@ class TransformerAligner(nn.Module):
 
         # Encoder pass with cross fusion of pitch
         for layer in self.encoder_layers:
-            # self-attention
             x2, _ = layer['self_attn'](x, x, x)
             x = x + x2; x = layer['ffn'](x)
-            # pitch cross-attention
             p_stream = self.pitch_proj(src_pitch.unsqueeze(-1))
             x2p, _ = layer['pitch_attn'](x, p_stream, p_stream)
             x = x + x2p; x = layer['ffn'](x)
-        memory = x  # encoded
+        memory = x
 
         # Decoder initialization
         bos = self.bos_token.expand(B, 1, self.d_model)
@@ -125,10 +124,8 @@ class TransformerAligner(nn.Module):
         for layer in self.decoder_layers:
             x2, _ = layer['self_attn'](x, x, x)
             x = x + x2; x = layer['ffn'](x)
-            # pitch cross-attn
             x2p, _ = layer['pitch_attn'](x, pitch_stream, pitch_stream)
             x = x + x2p; x = layer['ffn'](x)
-            # memory cross-attn
             x2m, attn_w = layer['cross_attn'](x, memory, memory, attn_mask=mask)
             x = x + x2m; x = layer['ffn'](x)
 
@@ -142,12 +139,29 @@ class TransformerAligner(nn.Module):
         tgt_p_pad = torch.cat([tgt_pitch.unsqueeze(-1), torch.zeros(B,1,1,device=device)], dim=1).squeeze(-1)
         loss_h = F.l1_loss(pred_hubert, tgt_h_pad)
         loss_p = F.l1_loss(pred_pitch, tgt_p_pad)
+        # Diagonal loss
+        pos_s = torch.arange(S, device=device).unsqueeze(0).repeat(T+1,1)
+        pos_t = torch.arange(T+1, device=device).unsqueeze(1).repeat(1,S)
+        dist = torch.abs(pos_t - pos_s).float() / S
+        loss_diag = (attn_w * dist.unsqueeze(0)).sum() / B
+        # Soft-DTW
         pf, tl = pred_hubert.permute(0,2,1), tgt_h_pad.permute(0,2,1)
         loss_sdtw = self.sdtw(pf, tl)
+        # EOS CE
         labels = torch.zeros(B, T+1, dtype=torch.long, device=device); labels[:,-1]=1
         loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1))
-        total = loss_h + loss_p + self.sdtw_weight*loss_sdtw + self.ce_weight*loss_ce
-        return total, {'hubert_l1':loss_h,'pitch_l1':loss_p,'sdtw':loss_sdtw,'ce':loss_ce}
+
+        total = loss_h + loss_p \
+              + self.diag_weight * loss_diag \
+              + self.sdtw_weight*loss_sdtw \
+              + self.ce_weight*loss_ce
+        return total, {
+            'hubert_l1': loss_h,
+            'pitch_l1': loss_p,
+            'diag': loss_diag,
+            'sdtw': loss_sdtw,
+            'ce': loss_ce
+        }
 
     def greedy_decode(self, src_hubert, src_pitch, max_len=200):
         B, S, _ = src_hubert.size(); device = src_hubert.device
@@ -169,7 +183,7 @@ class TransformerAligner(nn.Module):
             x = current
             for layer in self.decoder_layers:
                 x2, _ = layer['self_attn'](x, x, x); x = x + x2; x = layer['ffn'](x)
-                # build pitch_stream for decoder
+                # pitch stream
                 pitch_list = torch.cat(decoded_p, dim=1).unsqueeze(-1) if decoded_p else torch.zeros(B,0,1, device=device)
                 pitch_bos = torch.zeros(B,1,self.d_model, device=device)
                 pitch_stream = torch.cat([pitch_bos, self.pitch_proj(pitch_list)], dim=1)
