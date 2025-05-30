@@ -87,7 +87,7 @@ class TransformerAligner(nn.Module):
         self.eos_token = nn.Parameter(torch.randn(1, 1, d_model))
 
         # Soft-DTW
-        self.sdtw = SoftDTW(use_cuda=torch.cuda.is_available())
+        self.sdtw = SoftDTW()
 
     def forward(self, src_hubert, src_pitch, tgt_hubert, tgt_pitch):
         B, S, _ = src_hubert.size()
