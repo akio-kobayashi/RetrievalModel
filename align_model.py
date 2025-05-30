@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from torch.utils.checkpoint import checkpoint
 #from kornia.losses import SoftDTW
 
 # ----------------------------------------------------------------
@@ -92,13 +93,19 @@ class TransformerAligner(nn.Module):
         # Input fusion
         x = self.hubert_proj(src_hubert) + self.pitch_proj(src_pitch.unsqueeze(-1))
 
-        # Encoder pass with cross fusion of pitch
-        for layer in self.encoder_layers:
+        # Precompute pitch stream for encoder
+        p_stream_enc = self.pitch_proj(src_pitch.unsqueeze(-1))  # (B, S, d_model)
+
+        # Encoder pass with checkpoint
+        def encoder_block(x, p_stream, layer):
             x2, _ = layer['self_attn'](x, x, x, need_weights=False)
-            x = x + x2; x = layer['ffn'](x)
-            p_stream = self.pitch_proj(src_pitch.unsqueeze(-1))
-            x2p, _ = layer['pitch_attn'](x, p_stream, p_stream, need_weights=False)
-            x = x + x2p; x = layer['ffn'](x)
+            x_ = layer['ffn'](x + x2)
+            x2p, _ = layer['pitch_attn'](x_, p_stream, p_stream, need_weights=False)
+            return layer['ffn'](x_ + x2p)
+
+        for layer in self.encoder_layers:
+            x = checkpoint(encoder_block, x, p_stream_enc, layer)
+
         memory = x
 
         # Decoder initialization
@@ -111,18 +118,21 @@ class TransformerAligner(nn.Module):
         # Prepare pitch stream decoder
         pitch_only = tgt_p
         pitch_bos = torch.zeros(B,1,self.d_model, device=device)
-        pitch_stream = torch.cat([pitch_bos, pitch_only], dim=1)
+        p_stream_dec = torch.cat([pitch_bos, pitch_only], dim=1)  # (B, T+1, d_model)
 
         mask = compute_diagonal_mask(T+1, S, self.nu, device)
+        # Decoder pass with checkpoint
+        def decoder_block(x, p_stream, memory, layer, mask):
+            y2, _ = layer['self_attn'](x, x, x, need_weights=False)
+            y_ = layer['ffn'](x + y2)
+            y2p, _ = layer['pitch_attn'](y_, p_stream, p_stream, need_weights=False)
+            y__ = layer['ffn'](y_ + y2p)
+            y2m, attn_w = layer['cross_attn'](y__, memory, memory, attn_mask=mask, need_weights=True)
+            return layer['ffn'](y__ + y2m), attn_w
+
         attn_w = None
-        # Decoder pass
         for layer in self.decoder_layers:
-            x2, _ = layer['self_attn'](x, x, x, need_weights=False)
-            x = x + x2; x = layer['ffn'](x)
-            x2p, _ = layer['pitch_attn'](x, pitch_stream, pitch_stream, need_weights=False)
-            x = x + x2p; x = layer['ffn'](x)
-            x2m, attn_w = layer['cross_attn'](x, memory, memory, attn_mask=mask)
-            x = x + x2m; x = layer['ffn'](x)
+            x, attn_w = checkpoint(decoder_block, x, p_stream_dec, memory, layer, mask)
 
         # Predictions
         pred_hubert = self.out_hubert(x)
