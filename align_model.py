@@ -33,6 +33,7 @@ class TransformerAligner(nn.Module):
         dim_feedforward: int = 512,
         dropout: float = 0.1,
         nu: float = 0.3,
+        diag_weight: float = 1.0,
         sdtw_weight: float = 1.0,
         ce_weight: float = 1.0
     ):
