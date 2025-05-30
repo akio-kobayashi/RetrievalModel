@@ -20,7 +20,6 @@ class AlignTransformerSystem(pl.LightningModule):
         dim_ff: int = 512,
         dropout: float = 0.1,
         diag_w: float = 1.0,
-        #sdtw_w: float = 1.0,
         ce_w: float = 1.0
     ):
         super().__init__()
@@ -34,7 +33,6 @@ class AlignTransformerSystem(pl.LightningModule):
             dim_feedforward=self.hparams.dim_ff,
             dropout=self.hparams.dropout,
             diag_weight=self.hparams.diag_w,
-            #sdtw_weight=self.hparams.sdtw_w,
             ce_weight=self.hparams.ce_w
         )
 

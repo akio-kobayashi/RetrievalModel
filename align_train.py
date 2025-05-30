@@ -44,7 +44,6 @@ def train(cfg: dict):
         dim_ff=cfg.get("dim_ff", 512),
         dropout=cfg.get("dropout", 0.1),
         diag_w=cfg.get("diag_w", 1.0),
-        #sdtw_w=cfg.get("sdtw_w", 1.0),
         ce_w=cfg.get("ce_w", 1.0),
     )
 
