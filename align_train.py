@@ -10,8 +10,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
 # local modules for Hubert-to-Hubert alignment
-from h2h_hubert_dataset import Hubert2HubertDataset, collate_h2h
-from align_transformer_system import AlignTransformerSystem
+from align_dataset import Hubert2HubertDataset, collate_h2h
+from align_solver import AlignTransformerSystem
 
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
