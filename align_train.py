@@ -51,8 +51,8 @@ def train(cfg: dict):
     steps_per_epoch = len(train_dl)
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        filename="{epoch:02d}-{val_loss:.4f}",
-        monitor="val_loss",
+        filename="{epoch:02d}-{total:.4f}",
+        monitor="total",
         mode="min",
         save_top_k=3,
         save_last=True,

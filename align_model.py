@@ -157,6 +157,7 @@ class TransformerAligner(nn.Module):
               + self.diag_weight * loss_diag \
               + self.ce_weight*loss_ce
         return total, {
+            'total': total,
             'hubert_l1': loss_h,
             'pitch_l1': loss_p,
             'diag': loss_diag,
