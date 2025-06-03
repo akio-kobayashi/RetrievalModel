@@ -40,9 +40,13 @@ def split_csv(
     # --- filter out rows whose key contains any exclude substring ---
     if exclude_keys:
         before_count = len(rows)
-        rows = [r for r in rows if not any(substr in r['key'] for substr in exclude_keys)]
+        rows = [
+            r for r in rows
+            if not any(r['key'][-3:].startswith(substr) for substr in exclude_keys)
+        ]
         after_count = len(rows)
-        print(f"Excluded {before_count - after_count} rows containing {exclude_keys}")
+        print(f"Excluded {before_count - after_count} rows with suffix starting with {exclude_keys}")
+
 
     # --- optional subsampling ---
     if sample_n is not None and sample_n < len(rows):

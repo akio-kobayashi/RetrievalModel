@@ -35,6 +35,7 @@ class AlignTransformerSystem(pl.LightningModule):
             diag_weight=self.hparams.diag_w,
             ce_weight=self.hparams.ce_w
         )
+        self.train_losses = []
 
     def forward(self, src_hubert, src_pitch, tgt_hubert, tgt_pitch):
         return self.model(src_hubert, src_pitch, tgt_hubert, tgt_pitch)
@@ -43,6 +44,7 @@ class AlignTransformerSystem(pl.LightningModule):
         src_h, src_p, tgt_h, tgt_p = batch
         loss, metrics = self(src_h, src_p, tgt_h, tgt_p)
         self.log_dict(metrics, on_step=True, on_epoch=True)
+        self.train_losses.append(loss.detach())
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -60,3 +62,9 @@ class AlignTransformerSystem(pl.LightningModule):
     @torch.no_grad()
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         return self.greedy_decode(batch)
+
+    def on_train_epoch_end(self):
+        avg_train = torch.stack(self.train_losses).mean()
+        self.log('train_total', avg_train, on_step=False, on_epoch=True, prog_bar=True)
+        self.train_losses.clear()
+        

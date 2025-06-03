@@ -55,7 +55,18 @@ class Hubert2HubertDataset(Dataset):
                 if 'source' not in row or 'target' not in row:
                     raise ValueError("CSV must contain 'source' and 'target' columns")
                 self.rows.append(row)
+        all_f0 = []
+        for row in self.rows:             # rows は CSV から読み込んだ行のリスト
+            data = torch.load(row['source'], map_location='cpu')
+            log_f0 = data['log_f0']  # 例えば key 'log_f0' に入っていると仮定
+            all_f0.append(log_f0)
 
+        all_f0 = torch.cat(all_f0, dim=0)   # 1D テンソルにまとめる
+        self.mean_f0 = all_f0.mean().item()
+        self.std_f0  = all_f0.std().item()
+        output_stats = {"pitch_mean": self.mean_f0, "pitch_std": self.std_f0}
+        torch.save(output_stats, "deaf_stats.pt")
+        
     def __len__(self) -> int:
         return len(self.rows)
 
@@ -69,6 +80,10 @@ class Hubert2HubertDataset(Dataset):
         tgt_dict = torch.load(row['target'], map_location=self.map_location)
         tgt_hubert = tgt_dict['hubert'].float()   # (T_tgt, 768)
         tgt_pitch  = tgt_dict['log_f0'].float()   # (T_tgt,)
+
+        src_pitch = (src_pitch - self.mean_f0) / (self.std_f0 + 1.0e-9)
+        tgt_pitch = (tgt_pitch - self.mean_f0) / (self.std_f0 + 1.0e-9)
+        
         return src_hubert, src_pitch, tgt_hubert, tgt_pitch
 
 

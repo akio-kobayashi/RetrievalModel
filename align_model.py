@@ -148,7 +148,7 @@ class TransformerAligner(nn.Module):
         pos_s = torch.arange(S, device=device).unsqueeze(0).repeat(T+1,1)
         pos_t = torch.arange(T+1, device=device).unsqueeze(1).repeat(1,S)
         dist = torch.abs(pos_t - pos_s).float() / S
-        loss_diag = (attn_w * dist.unsqueeze(0)).sum() / B
+        loss_diag = (attn_w * dist.unsqueeze(0)).sum() / (B * (T+1)) 
         # EOS CE
         labels = torch.zeros(B, T+1, dtype=torch.long, device=device); labels[:,-1]=1
         loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1))
@@ -157,7 +157,6 @@ class TransformerAligner(nn.Module):
               + self.diag_weight * loss_diag \
               + self.ce_weight*loss_ce
         return total, {
-            'total': total,
             'hubert_l1': loss_h,
             'pitch_l1': loss_p,
             'diag': loss_diag,
