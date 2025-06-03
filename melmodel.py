@@ -6,6 +6,37 @@ from typing import List
 from einops.layers.torch import Rearrange
 
 # --------------------------------------------------
+# HuBERT-pitch Cross-Attention Fusion
+# --------------------------------------------------
+class CrossAttnFusion(nn.Module):
+    def __init__(self, hub_dim: int = 768, nhead: int = 8, dropout: float = 0.1):
+        super().__init__()
+        # pitch(1) → hub_dim へ射影
+        self.pitch_proj = nn.Linear(1, hub_dim)
+        # HuBERT(Q) × pitch(K,V)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=hub_dim, num_heads=nhead,
+            dropout=dropout, batch_first=True
+        )
+        # 残差後を正規化
+        self.ln = nn.LayerNorm(hub_dim)
+
+    def forward(self, hubert: torch.Tensor, pitch: torch.Tensor, mask=None):
+        """
+        hubert : (B, T, 768)
+        pitch  : (B, T)     → 内部で (B, T, 1) に unsqueeze
+        mask   : (B, T) or None
+        """
+        p_emb = self.pitch_proj(pitch.unsqueeze(-1))      # (B, T, 768)
+        attn_out, _ = self.cross_attn(
+            query=hubert,            # Q
+            key=p_emb, value=p_emb,  # K,V
+            key_padding_mask=mask
+        )
+        # HuBERT へ pitch 情報を注入（residual）
+        return self.ln(hubert + attn_out)                 # (B, T, 768)
+
+# --------------------------------------------------
 # Conformer Block
 # --------------------------------------------------
 class ConformerBlock(nn.Module):
@@ -47,12 +78,17 @@ class ConformerBlock(nn.Module):
         return self.norm(x)
 
 # --------------------------------------------------
-# Posterior Encoder  (HuBERT 768 + pitch 1  => latent_ch)
+# Posterior Encoder  (HuBERT × pitch → latent)
 # --------------------------------------------------
 class PosteriorEncoder(nn.Module):
-    def __init__(self, latent_ch=256, n_layers=4):
+    def __init__(self, latent_ch: int = 256, n_layers: int = 4,
+                 nhead: int = 8, dropout: float = 0.1):
         super().__init__()
-        ch_in = 768 + 1
+
+        self.fusion = CrossAttnFusion(768, nhead, dropout)  # ★ 追加部分 ★
+
+        # 以下は元コードとほぼ同じ ― conv-GLU × n_layers
+        ch_in = 768
         layers = []
         for _ in range(n_layers):
             layers.append(
@@ -65,9 +101,14 @@ class PosteriorEncoder(nn.Module):
             ch_in = latent_ch
         self.net = nn.Sequential(*layers)
 
-    def forward(self, hubert, pitch):  # hubert: (B, T, 768)  pitch: (B, T)
-        x = torch.cat([hubert.transpose(1, 2), pitch.unsqueeze(1)], 1)
-        return self.net(x)  # (B, C, T)
+    def forward(self, hubert, pitch, mask=None):           # hubert:(B,T,768) pitch:(B,T)
+        # ① pitch をクロスアテンションで注入
+        x = self.fusion(hubert, pitch, mask)               # (B,T,768)
+
+        # ② conv スタックへ (B,C,T) 形状で渡す
+        x = self.net(x.transpose(1, 2))                    # (B, latent_ch, T)
+        return x
+
 
 # --------------------------------------------------
 # Conformer-based Generator (latent_C, upsample -> mel)
@@ -190,13 +231,16 @@ class MelMultiScaleDiscriminator(nn.Module):
 class RVCStyleVC(nn.Module):
     def __init__(self, latent_ch=256, d_model=256, n_conformer=8, nhead=8):
         super().__init__()
-        self.encoder = PosteriorEncoder(latent_ch)
-        self.generator = ConformerGenerator(in_ch=latent_ch, d_model=d_model, n_conformer=n_conformer, nhead=nhead)
+        self.encoder = PosteriorEncoder(latent_ch, nhead=nhead)  # ← new encoder
+        self.generator = ConformerGenerator(
+            in_ch=latent_ch, d_model=d_model,
+            n_conformer=n_conformer, nhead=nhead
+        )
 
-    def forward(self, hubert, pitch, target_length: int | None = None):
-        z = self.encoder(hubert, pitch)                      # (B,C,T)
-        mel = self.generator(z, target_length)               # (B,T,80)
-        return mel                                           # ← squeeze removed
+    def forward(self, hubert, pitch, target_length: int | None = None, mask=None):
+        z = self.encoder(hubert, pitch, mask)              # (B,C,T)
+        mel = self.generator(z, target_length)             # (B,T,80)
+        return mel
 
 # --------------------------------------------------
 if __name__ == "__main__":
