@@ -36,6 +36,7 @@ class AlignTransformerSystem(pl.LightningModule):
             ce_weight=self.hparams.ce_w
         )
         self.train_losses = []
+        self.val_losses = []
 
     def forward(self, src_hubert, src_pitch, tgt_hubert, tgt_pitch):
         return self.model(src_hubert, src_pitch, tgt_hubert, tgt_pitch)
@@ -50,16 +51,9 @@ class AlignTransformerSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p = batch
         loss, _ = self(src_h, src_p, tgt_h, tgt_p)
-        '''
-        self.log(
-            "val_loss",
-            loss,
-            on_step=False,    # バッチ単位ではログしない
-            on_epoch=True,    # epoch 終了時に集計してログ
-            prog_bar=True     # プログレスバーにも表示
-        )
-        '''
-        return loss
+        self._val_losses.append(loss.detach())
+
+        return loss.detach()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
@@ -78,12 +72,13 @@ class AlignTransformerSystem(pl.LightningModule):
         self.train_losses.clear()
     
     def validation_epoch_end(self, outputs):
-        avg_val_loss = torch.stack(outputs).mean()
+        avg_loss = torch.stack(self._val_losses).mean()
 
         self.log(
             "val_loss",
-            avg_val_loss,
+            avg_loss,
             prog_bar=True,    # プログレスバーにも出す
             on_step=False,    # バッチごとでは出さない
             on_epoch=True     # エポック平均を出す
         )
+        self._val_losses.clear()
