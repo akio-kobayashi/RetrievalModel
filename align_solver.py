@@ -50,7 +50,14 @@ class AlignTransformerSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p = batch
         loss, _ = self(src_h, src_p, tgt_h, tgt_p)
-        self.log('val_loss', loss)
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,    # バッチ単位ではログしない
+            on_epoch=True,    # epoch 終了時に集計してログ
+            prog_bar=True     # プログレスバーにも表示
+        )
+        return loss
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)

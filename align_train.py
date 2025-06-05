@@ -32,6 +32,18 @@ def train(cfg: dict):
         collate_fn=collate_h2h,
         pin_memory=True,
     )
+    valid_ds = Hubert2HubertDataset(
+        cfg["valid_csv"],
+        map_location=cfg.get("map_location", "cpu")
+    )
+    valid_dl = DataLoader(
+        valid_ds,
+        batch_size=cfg.get("batch_size", 8),
+        shuffle=True,
+        num_workers=cfg.get("num_workers", 4),
+        collate_fn=collate_h2h,
+        pin_memory=True,
+    )
 
     # ─── model ────────────────────────────────────────────────
     model = AlignTransformerSystem(
@@ -51,8 +63,8 @@ def train(cfg: dict):
     steps_per_epoch = len(train_dl)
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        filename="{epoch:02d}-{train_total:.4f}",
-        monitor="train_total",
+        filename="{epoch:02d}-{val_loss:.4f}",
+        monitor="val_loss",
         mode="min",
         save_top_k=3,
         save_last=True,
@@ -75,8 +87,7 @@ def train(cfg: dict):
     )
 
     # ─── fit ─────────────────────────────────────────────────
-    trainer.fit(model, train_dl)
-
+    trainer.fit(model, train_dl, valid_dl)
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")

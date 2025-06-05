@@ -81,14 +81,14 @@ def main(args):
     with torch.no_grad():
         for r in rows:
             key = r["key"]
-            wav,_ = torchaudio.load(r["wave"])
+            #wav,_ = torchaudio.load(r["wave"])
             tens = torch.load(r["hubert"], map_location=device)
             hubert = tens["hubert"].unsqueeze(0).to(device)  # (1,T,768)
             pitch  = tens["log_f0"].unsqueeze(0).to(device)   # (1,T)
             ref = tens["mel"].squeeze()
             pitch  = (pitch - pitch_mean) / (pitch_std + 1e-9)
-            print(wav.shape)
-            print(hubert.shape)
+            #print(wav.shape)
+            #print(hubert.shape)
             print(ref.transpose(0, 1).shape)
             # ---------- Generator forward ----------
             mel = gen(hubert, pitch, target_length=ref.shape[-1]).cpu().squeeze(0)         # (T, 80)
