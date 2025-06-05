@@ -50,6 +50,7 @@ class AlignTransformerSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p = batch
         loss, _ = self(src_h, src_p, tgt_h, tgt_p)
+        '''
         self.log(
             "val_loss",
             loss,
@@ -57,6 +58,7 @@ class AlignTransformerSystem(pl.LightningModule):
             on_epoch=True,    # epoch 終了時に集計してログ
             prog_bar=True     # プログレスバーにも表示
         )
+        '''
         return loss
 
     def configure_optimizers(self):
@@ -74,4 +76,14 @@ class AlignTransformerSystem(pl.LightningModule):
         avg_train = torch.stack(self.train_losses).mean()
         self.log('train_total', avg_train, on_step=False, on_epoch=True, prog_bar=True)
         self.train_losses.clear()
-        
+    
+    def validation_epoch_end(self, outputs):
+        avg_val_loss = torch.stack(outputs).mean()
+
+        self.log(
+            "val_loss",
+            avg_val_loss,
+            prog_bar=True,    # プログレスバーにも出す
+            on_step=False,    # バッチごとでは出さない
+            on_epoch=True     # エポック平均を出す
+        )
