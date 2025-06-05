@@ -72,7 +72,7 @@ class AlignTransformerSystem(pl.LightningModule):
         self.train_losses.clear()
     
     def on_validation_epoch_end(self):
-        if not self._val_losses:
+        if not self.val_losses:
             return
                 
         avg_loss = torch.stack(self.val_losses).mean()
