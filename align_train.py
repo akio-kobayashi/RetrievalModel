@@ -68,7 +68,7 @@ def train(cfg: dict):
         mode="min",
         save_top_k=3,
         save_last=True,
-        every_n_train_steps=1,
+        every_n_epochs=1,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="h2h_align")
