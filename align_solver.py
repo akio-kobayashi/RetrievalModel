@@ -53,7 +53,7 @@ class AlignTransformerSystem(pl.LightningModule):
         loss, _ = self(src_h, src_p, tgt_h, tgt_p)
         self.val_losses.append(loss.detach())
 
-        return loss.detach()
+        #return loss.detach()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
@@ -72,6 +72,9 @@ class AlignTransformerSystem(pl.LightningModule):
         self.train_losses.clear()
     
     def on_validation_epoch_end(self):
+        if not self._val_losses:
+            return
+                
         avg_loss = torch.stack(self.val_losses).mean()
 
         self.log(
