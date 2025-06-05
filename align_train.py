@@ -16,6 +16,10 @@ from align_solver import AlignTransformerSystem
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
 warnings.filterwarnings("ignore", message="The number of training batches.*")
+warnings.filterwarnings(
+    "ignore",
+    message=r".*does not have many workers which may be a bottleneck.*"
+)
 
 
 def train(cfg: dict):
