@@ -18,6 +18,7 @@ def compute_diagonal_mask(T: int, S: int, nu: float = 0.3, device=None) -> torch
     diff = (src - tgt) ** 2
     weight = torch.exp(-diff / (2 * nu * nu))
     mask = torch.log(weight)
+    mask = torch.clamp(mask, min=-1e9)
     return mask
 
 # ----------------------------------------------------------------
@@ -151,7 +152,7 @@ class TransformerAligner(nn.Module):
         loss_diag = (attn_w * dist.unsqueeze(0)).sum() / (B * (T+1)) 
         # EOS CE
         labels = torch.zeros(B, T+1, dtype=torch.long, device=device); labels[:,-1]=1
-        loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1))
+        loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1), label_smoothing=0.1)
 
         total = loss_h + loss_p \
               + self.diag_weight * loss_diag \
