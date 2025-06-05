@@ -39,7 +39,7 @@ def train(cfg: dict):
     valid_dl = DataLoader(
         valid_ds,
         batch_size=cfg.get("batch_size", 8),
-        shuffle=True,
+        shuffle=False,
         num_workers=cfg.get("num_workers", 4),
         collate_fn=collate_h2h,
         pin_memory=True,
@@ -68,7 +68,7 @@ def train(cfg: dict):
         mode="min",
         save_top_k=3,
         save_last=True,
-        every_n_train_steps=steps_per_epoch,
+        every_n_train_steps=1,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="h2h_align")
