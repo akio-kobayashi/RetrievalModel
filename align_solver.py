@@ -56,7 +56,11 @@ class AlignTransformerSystem(pl.LightningModule):
         #return loss.detach()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        opt = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=self.trainer.max_epochs, eta_min=self.hparams.lr/10.0
+        )
+        return {"optimizer": opt, "lr_scheduler": sched}
 
     def greedy_decode(self, batch, max_len=200):
         src_h, src_p, _, _ = batch

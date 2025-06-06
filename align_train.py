@@ -83,6 +83,8 @@ def train(cfg: dict):
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.get("gpus", 1),
         precision=cfg.get("precision", "16-mixed"),
+        gradient_clip_val=cfg.get("gradient_clip_val", 1.0),
+        gradient_clip_algorithm="norm",
         default_root_dir=cfg["work_dir"],
         logger=tb_logger,
         callbacks=[ckpt_cb, lr_monitor],

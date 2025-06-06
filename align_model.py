@@ -140,6 +140,14 @@ class TransformerAligner(nn.Module):
         pred_pitch  = self.out_pitch(x).squeeze(-1)
         logits      = self.token_classifier(x)
 
+        # for NaN 
+        if torch.isnan(attn_w).any():
+            attn_w = torch.nan_to_num(attn_w)
+        if torch.isnan(pred_hubert).any():
+            pred_hubert = torch.nan_to_num(pred_hubert)
+        if torch.isnan(pred_pitch).any():
+            pred_pitch = torch.nan_to_num(pred_pitch)
+
         # Loss
         tgt_h_pad = torch.cat([tgt_hubert, torch.zeros(B,1,tgt_hubert.size(-1),device=device)], dim=1)
         tgt_p_pad = torch.cat([tgt_pitch.unsqueeze(-1), torch.zeros(B,1,1,device=device)], dim=1).squeeze(-1)
@@ -152,11 +160,14 @@ class TransformerAligner(nn.Module):
         loss_diag = (attn_w * dist.unsqueeze(0)).sum() / (B * (T+1)) 
         # EOS CE
         labels = torch.zeros(B, T+1, dtype=torch.long, device=device); labels[:,-1]=1
+        logits = torch.clamp(logits, -20.0, 20.0)
         loss_ce = F.cross_entropy(logits.view(-1,2), labels.view(-1), label_smoothing=0.1)
 
         total = loss_h + loss_p \
               + self.diag_weight * loss_diag \
               + self.ce_weight*loss_ce
+        if torch.isnan(total):
+            total = torch.nan_to_num(total)
         return total, {
             'hubert_l1': loss_h,
             'pitch_l1': loss_p,
