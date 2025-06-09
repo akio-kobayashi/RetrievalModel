@@ -34,6 +34,8 @@ class MelVCSystem(pl.LightningModule):
         self.disc_mpd = MelMultiPeriodDiscriminator()
         self.disc_msd = MelMultiScaleDiscriminator()
 
+        self.val_losses = []
+
     # --------------------------------------------------
     # helper losses
     # --------------------------------------------------
@@ -138,8 +140,9 @@ class MelVCSystem(pl.LightningModule):
     def validation_step(self, batch, _):
         hub, pit, mel_real = batch
         mel_fake = self.gen(hub, pit, target_length=mel_real.size(1))
-        val_mel = F.l1_loss(mel_fake, mel_real)
-        self.log("val_mel", val_mel, prog_bar=True)
+        val_loss_mel = F.l1_loss(mel_fake, mel_real)
+        #self.log("val_loss_mell", val_loss_mell, prog_bar=True)
+        self.val_losses.append(val_loss_mel.detach())
 
     # --------------------------------------------------
     def configure_optimizers(self):
@@ -160,3 +163,18 @@ class MelVCSystem(pl.LightningModule):
         hubert, pitch, _ = batch
         mel = self.gen(hubert, pitch, target_length=None)  # length auto by upsample_factor
         return mel
+
+    def on_validation_epoch_end(self):
+        if not self.val_losses:
+            return
+                
+        avg_loss = torch.stack(self.val_losses).mean()
+
+        self.log(
+            "val_loss_mel",
+            avg_loss,
+            prog_bar=True,    # プログレスバーにも出す
+            on_step=False,    # バッチごとでは出さない
+            on_epoch=True     # エポック平均を出す
+        )
+        self.val_losses.clear()

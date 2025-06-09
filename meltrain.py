@@ -25,7 +25,6 @@ def train(cfg: dict):
     # ─── dataset ───────────────────────────────────────────────
     stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)
     train_ds = VCMelDataset(cfg["train_csv"], stats)  # ← no cropping args
-
     train_dl = DataLoader(
         train_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -34,6 +33,17 @@ def train(cfg: dict):
         collate_fn=data_processing,
         pin_memory=True,
     )
+
+    valid_ds = VCMelDataset(cfg["valid_csv"], stats)  # ← no cropping args
+    valid_dl = DataLoader(
+        valid_ds,
+        batch_size=cfg.get("batch_size", 8),
+        shuffle=False,
+        num_workers=cfg.get("num_workers", 4),
+        collate_fn=data_processing,
+        pin_memory=True,
+    )
+
 
     # ─── model ────────────────────────────────────────────────
     model = MelVCSystem(
@@ -53,11 +63,11 @@ def train(cfg: dict):
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
         filename="{epoch:02d}-{loss_mel:.4f}",
-        monitor="loss_mel",
+        monitor="val_loss_mel",
         mode="min",
         save_top_k=3,
         save_last=True,
-        every_n_train_steps=steps_per_epoch,
+        every_n_epochs=1,
     )
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="vc")
@@ -75,7 +85,7 @@ def train(cfg: dict):
         check_val_every_n_epoch=0,  # disable validation
     )
 
-    trainer.fit(model, train_dl)
+    trainer.fit(model, train_dl, valid_dl)
 
 # --------------------------------------------------
 if __name__ == "__main__":
