@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/home/akio/.local/lib/python3.10/site-packages')
+
 import argparse
 from pathlib import Path
 import yaml
@@ -62,7 +65,7 @@ def train(cfg: dict):
     steps_per_epoch = len(train_dl)
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
-        filename="{epoch:02d}-{loss_mel:.4f}",
+        filename="{epoch:02d}-{val_loss_mel:.4f}",
         monitor="val_loss_mel",
         mode="min",
         save_top_k=3,
@@ -82,10 +85,10 @@ def train(cfg: dict):
         logger=tb_logger,
         callbacks=[ckpt_cb, lr_monitor],
         profiler="simple",
-        check_val_every_n_epoch=0,  # disable validation
+        check_val_every_n_epoch=1,
     )
 
-    trainer.fit(model, train_dl, valid_dl)
+    trainer.fit(model, train_dl, val_dataloaders=valid_dl)
 
 # --------------------------------------------------
 if __name__ == "__main__":
