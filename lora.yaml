@@ -1,0 +1,48 @@
+# === Dataset Paths ===
+train_csv: "path/to/train.csv"
+train_mel_dir: "path/to/train/mels"
+valid_csv: "path/to/valid.csv"
+valid_mel_dir: "path/to/valid/mels"
+
+# === Checkpoint and Logging ===
+align_ckpt: "path/to/pretrained/aligner.ckpt"
+mel_ckpt: "path/to/pretrained/meldecoder.ckpt"
+ckpt_dir: "checkpoints/lora"
+log_dir: "logs/lora"
+work_dir: "."
+
+# === Training Settings ===
+batch_size: 8
+num_workers: 4
+max_epochs: 100
+gpus: 1
+precision: 16-mixed
+gradient_clip_val: 1.0
+
+# === Learning Rate ===
+lr: 0.0002
+
+# === Alignment Model Settings ===
+input_dim_hubert: 768
+input_dim_pitch: 1
+align_d_model: 256
+align_nhead: 4
+align_num_layers: 3
+align_dim_ff: 512
+align_dropout: 0.1
+diag_w: 1.0
+ce_w: 1.0
+
+# === RVC Model Settings ===
+latent_ch: 256
+rvc_d_model: 256
+rvc_n_conformer: 8
+rvc_nhead: 8
+
+# === LoRA Settings ===
+lora_rank: 4
+lora_alpha: 1.0
+
+# === Loss Weights ===
+align_weight: 1.0
+mel_weight: 1.0
