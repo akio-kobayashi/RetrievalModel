@@ -1,8 +1,9 @@
 # === Dataset Paths ===
 train_csv: "path/to/train.csv"
-train_mel_dir: "path/to/train/mels"
+train_mel_csv: "path/to/train_mels.csv"
 valid_csv: "path/to/valid.csv"
-valid_mel_dir: "path/to/valid/mels"
+valid_mel_csv: "path/to/valid_mels.csv"
+stats_tensor: "path/to/stats.pt"
 
 # === Checkpoint and Logging ===
 align_ckpt: "path/to/pretrained/aligner.ckpt"

@@ -11,8 +11,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 # your combined dataset that yields:
 # (src_hubert, src_pitch, tgt_hubert, tgt_pitch, mel_target)
-from your_dataset import AlignmentRVCDataset, collate_alignment_rvc
-from your_module import AlignmentRVCSystem
+from lora_dataset import KeySynchronizedDataset, collate_alignment_rvc
+from lora_solver import AlignmentRVCSystem
 
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
@@ -24,26 +24,24 @@ warnings.filterwarnings(
 
 
 def train(cfg: dict):
-    # ─── dataset ───────────────────────────────────────────────
-    train_ds = AlignmentRVCDataset(
-        cfg["train_csv"],
-        cfg["train_mel_dir"],
-        map_location=cfg.get("map_location", "cpu")
-    )
+    # ─── dataset ──────────────────────
+    stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)  
+    train_ds = KeySynchronizedDataset(cfg["train_csv"],
+                                      cfg["train_mel_csv"],
+                                      stats,
+                                      shuffle=True)
     train_dl = DataLoader(
         train_ds,
         batch_size=cfg.get("batch_size", 8),
-        shuffle=True,
+        shuffle=False,
         num_workers=cfg.get("num_workers", 4),
         collate_fn=collate_alignment_rvc,
         pin_memory=True,
     )
-
-    valid_ds = AlignmentRVCDataset(
-        cfg["valid_csv"],
-        cfg["valid_mel_dir"],
-        map_location=cfg.get("map_location", "cpu")
-    )
+    valid_ds = KeySynchronizedDataset(cfg["valid_csv"],
+                                      cfg["valid_mel_csv"],
+                                      stats,
+                                      shuffle=False)
     valid_dl = DataLoader(
         valid_ds,
         batch_size=cfg.get("batch_size", 8),
