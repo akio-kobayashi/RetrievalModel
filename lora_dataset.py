@@ -46,21 +46,37 @@ class KeySynchronizedDataset(Dataset):
         shuffle: bool = True,
         map_location: str = "cpu",
     ):
-        # --- 読み込み ---
         align_df = pd.read_csv(align_csv)
-        mel_df = pd.read_csv(mel_csv).set_index("key")
+        mel_df = pd.read_csv(mel_csv)
+        # 型をそろしておく
+        align_df["key"] = align_df["key"].astype(str).str.strip()
+        mel_df["key"]   = mel_df["key"].astype(str).str.strip()
+        mel_df = mel_df.set_index("key")
 
+        align_keys = set(align_df["key"])
+        mel_keys   = set(mel_df.index)
+
+        common_keys = align_keys & mel_keys
+        missing_in_mel   = align_keys - mel_keys
+        missing_in_align = mel_keys - align_keys
+
+        print(f"[DEBUG] align keys: {len(align_keys)}")
+        print(f"[DEBUG] mel   keys: {len(mel_keys)}")
+        print(f"[DEBUG] common : {len(common_keys)}")
+        if missing_in_mel:
+            print(f"[WARN] {len(missing_in_mel)} keys from align.csv not in mel.csv: {list(missing_in_mel)[:5]} …")
+        if missing_in_align:
+            print(f"[WARN] {len(missing_in_align)} keys from mel.csv   not in align.csv: {list(missing_in_align)[:5]} …")
+
+        # 共通キーのみで map を作り直し
         self.align_map = {}
-        self.mel_map = {}
+        self.mel_map   = {}
+        for key in common_keys:
+            row = align_df[align_df["key"] == key].iloc[0]
+            self.align_map[key] = {"source": row["source"], "target": row["target"]}
+            self.mel_map[key]   = mel_df.loc[key, "hubert"]
 
-        for _, row in align_df.iterrows():
-            key = row.get("key")
-            if key in mel_df.index:
-                self.align_map[key] = {"source": row["source"], "target": row["target"]}
-                self.mel_map[key] = mel_df.loc[key, "hubert"]
-
-        # 共通keyのみに限定
-        self.keys = list(set(self.align_map.keys()) & set(self.mel_map.keys()))
+        self.keys = list(common_keys)
         if shuffle:
             random.shuffle(self.keys)
 
@@ -89,8 +105,14 @@ class KeySynchronizedDataset(Dataset):
         # ─ mel data ─
         mel_pt = torch.load(self.mel_map[key], map_location=self.map_location)
         mel = mel_pt["mel"].float()
-        if mel.size(0) == 80:
+        if mel.ndim == 3 and mel.shape[0] == 1:
+            mel = mel.squeeze(0)
+            
+        if mel.shape[0] == 80 and mel.shape[1] != 80:
             mel = mel.transpose(0, 1)
+        elif mel.shape[1] != 80:
+            raise ValueError(f"unexpected shape {mel.shape}")
+        
         mel = (mel - self.mel_mean) / self.mel_std
 
         return src_hubert, src_pitch, tgt_hubert, tgt_pitch, mel

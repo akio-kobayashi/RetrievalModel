@@ -5,12 +5,14 @@ from torch.optim import AdamW
 
 from align_model import TransformerAligner
 from align_lora import apply_lora_to_transformeraligner
-from mellora import RVCStyleVC_LoRA
+from lora_rvc import RVCStyleVC_LoRA
 
 class AlignmentRVCSystem(pl.LightningModule):
     def __init__(
         self,
         # ckpt
+        align_ckpt:str,
+        mel_ckpt:str,
         # optimizer
         lr: float = 2e-4,
         # Alignment model
@@ -51,15 +53,24 @@ class AlignmentRVCSystem(pl.LightningModule):
             ce_weight=self.hparams.ce_w
         )
         # --- load pretrained weights for aligner (LoRA-less) ---
-        ckpt_align = torch.load(self.hparams.align_ckpt, map_location="cpu")
-        base_align.load_state_dict(ckpt_align, strict=True)
+        ckpt = torch.load(align_ckpt, map_location="cpu")
+        sd_raw = ckpt.get("state_dict", ckpt)
+        state_dict = {
+            k.removeprefix("model.") if k.startswith("model.") else k: v
+            for k, v in sd_raw.items()
+        }
 
-        # wrap with LoRA
+        # state_dict のみを load_state_dict に渡す
+        missing, unexpected = base_align.load_state_dict(state_dict, strict=True)
+        #print("missing:", missing)
+        #print("unexpected", unexpected)
+        
+        # その後 LoRA を適用
         self.aligner = apply_lora_to_transformeraligner(
             base_align,
             rank=self.hparams.lora_rank,
             alpha=self.hparams.lora_alpha
-        )
+        )        
         
         # freeze parameters
         for name, p in self.aligner.named_parameters():
@@ -68,17 +79,10 @@ class AlignmentRVCSystem(pl.LightningModule):
 
         # 2) LoRA-wrapped RVC model
         self.rvc = RVCStyleVC_LoRA(
-            latent_ch=self.hparams.latent_ch,
-            d_model=self.hparams.rvc_d_model,
-            n_conformer=self.hparams.rvc_n_conformer,
-            nhead=self.hparams.rvc_nhead,
-            rank=self.hparams.lora_rank,
-            alpha=self.hparams.lora_alpha
-        )
-        # --- load pretrained weights for RVC (LoRA-less) ---
-        ckpt_rvc = torch.load(self.hparams.mel_ckpt, map_location="cpu")
-        self.rvc.load_state_dict(ckpt_rvc, strict=False)
-
+            ckpt_path = mel_ckpt,
+            rank=lora_rank,
+            alpha=lora_alpha)
+        
         # prepare loss storage
         self.train_losses = []
         self.val_losses = []
@@ -100,17 +104,61 @@ class AlignmentRVCSystem(pl.LightningModule):
 
         # decode and mel-predict
         pred_hubert, pred_pitch = self.aligner.greedy_decode(src_h, src_p)
+        '''
+        print(f"[DEBUG] pred_hubert.shape={tuple(pred_hubert.shape)}",
+              "finite all:", torch.isfinite(pred_hubert).all().item(),
+              "any NaN:", torch.isnan(pred_hubert).any().item())
+        print(f"[DEBUG] pred_pitch.shape={tuple(pred_pitch.shape)}",
+              "finite all:", torch.isfinite(pred_pitch).all().item(),
+              "any NaN:", torch.isnan(pred_pitch).any().item())
+        '''
         mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
-
+        '''
+        print(f"DEBUG mel_pred.shape={tuple(mel_pred.shape)}, mel_tgt.shape={tuple(mel_tgt.shape)}")
+        print("DEBUG mel_pred finite all:", torch.isfinite(mel_pred).all().item(),
+              "  any NaN:", torch.isnan(mel_pred).any().item())
+        print("DEBUG mel_tgt  finite all:", torch.isfinite(mel_tgt).all().item(),
+              "  any NaN:", torch.isnan(mel_tgt).any().item())
+        '''
         # mel reconstruction loss
         loss_mel = F.l1_loss(mel_pred, mel_tgt)
 
+        '''
+        # torch.isnan だけでなく torch.isfinite を使って nan/inf を検出
+        if not torch.isfinite(loss_align):
+            print("⚠️ loss_align is not finite:", loss_align)
+            print("   src_h mean/std:", src_h.mean().item(), src_h.std().item())
+            print("   src_p mean/std:", src_p.mean().item(), src_p.std().item())
+
+            if not torch.isfinite(loss_mel):
+                print("⚠️ loss_mel is not finite:", loss_mel)
+                print("   mel_pred mean/std:", mel_pred.mean().item(), mel_pred.std().item())
+                print("   mel_tgt mean/std:", mel_tgt.mean().item(), mel_tgt.std().item())
+        '''
         # combined
         total_loss = (
             self.hparams.align_weight * loss_align
             + self.hparams.mel_weight * loss_mel
         )
+        
+        aw, mw = self.hparams.align_weight, self.hparams.mel_weight
+        assert torch.isfinite(torch.tensor(aw)), f"align_weight is not finite: {aw}"
+        assert torch.isfinite(torch.tensor(mw)), f"mel_weight   is not finite: {mw}"
 
+        '''
+        # total_loss に nan/inf が混入していないか
+        assert torch.isfinite(total_loss), (
+            f"⚠️ total_loss is not finite!\n"
+            f"  loss_align={loss_align.item()}, loss_mel={loss_mel.item()}\n"
+            f"  align_w={aw}, mel_w={mw}"
+        )
+        
+        # metrics の中に非有限値がないか
+        for k, v in metrics.items():
+            if not torch.isfinite(v):
+                print(f"⚠️ metrics[{k}] is not finite: {v}")
+        '''
+        
         # logging
         self.log_dict(metrics, on_step=True, on_epoch=True)
         self.log("loss_align", loss_align, prog_bar=False)
@@ -126,6 +174,7 @@ class AlignmentRVCSystem(pl.LightningModule):
         pred_hubert, pred_pitch = self.aligner.greedy_decode(src_h, src_p)
         mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
         loss_mel = F.l1_loss(mel_pred, mel_tgt)
+        self.log("val_loss_mel", loss_mel)
         self.val_losses.append(
             self.hparams.align_weight * loss_align + self.hparams.mel_weight * loss_mel
         )
@@ -151,4 +200,8 @@ class AlignmentRVCSystem(pl.LightningModule):
             T_max=self.trainer.max_epochs,
             eta_min=self.hparams.lr / 10.0
         )
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "gradient_clip_val": 1.0,
+        }

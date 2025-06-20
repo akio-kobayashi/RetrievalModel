@@ -29,15 +29,23 @@ def split_csv(
     src: Path,
     out_dir: Path,
     exclude_keys: Optional[List[str]],
+    include_keys: Optional[List[str]],
     sample_n: Optional[int],
     train_ratio: float,
-    seed: int,
+    seed: int=42,
 ):
-    """Filter by key substrings, optionally subsample rows, then split into train/val."""
+    """Filter by key substrings (include first, then exclude), optionally subsample, then split."""
     random.seed(seed)
     rows = load_csv(src)
 
-    # --- filter out rows whose key contains any exclude substring ---
+    # --- include only rows whose key contains any include substring ---
+    if include_keys:
+        before_count = len(rows)
+        rows = [r for r in rows if any(substr in r['key'] for substr in include_keys)]
+        after_count = len(rows)
+        print(f"Included {after_count} / {before_count} rows containing substrings {include_keys}")
+
+    # --- filter out rows whose key suffix matches any exclude substring ---
     if exclude_keys:
         before_count = len(rows)
         rows = [
@@ -46,7 +54,6 @@ def split_csv(
         ]
         after_count = len(rows)
         print(f"Excluded {before_count - after_count} rows with suffix starting with {exclude_keys}")
-
 
     # --- optional subsampling ---
     if sample_n is not None and sample_n < len(rows):
@@ -59,7 +66,6 @@ def split_csv(
 
     save_csv(train_rows, out_dir / "train.csv")
     save_csv(val_rows,   out_dir / "val.csv")
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(
@@ -77,6 +83,13 @@ if __name__ == "__main__":
         nargs='+',
         default=[],
         help="list of substrings in key to exclude (e.g. --exclude sub1 sub2)"
+    )
+    ap.add_argument(
+        "--include", "-i",
+        type=str,
+        nargs='+',
+        default=[],
+        help="list of substrings in key to include"
     )
     ap.add_argument(
         "--num", type=int, default=None,
@@ -105,6 +118,7 @@ if __name__ == "__main__":
         args.src,
         args.out_dir,
         args.exclude,
+        args.include,
         args.num,
         args.ratio,
         args.seed,

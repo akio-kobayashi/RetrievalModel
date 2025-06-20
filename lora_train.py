@@ -50,7 +50,7 @@ def train(cfg: dict):
         collate_fn=collate_alignment_rvc,
         pin_memory=True,
     )
-
+    
     # ─── model ────────────────────────────────────────────────
     model = AlignmentRVCSystem(
         align_ckpt    = cfg["align_ckpt"],

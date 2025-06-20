@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.nn.utils.parametrizations import spectral_norm
 from typing import List
 from einops.layers.torch import Rearrange
-
+from align_model import safe_attn_mask
 # --------------------------------------------------
 # HuBERT-pitch Cross-Attention Fusion
 # --------------------------------------------------
@@ -27,11 +27,18 @@ class CrossAttnFusion(nn.Module):
         pitch  : (B, T)     → 内部で (B, T, 1) に unsqueeze
         mask   : (B, T) or None
         """
+        if pitch.dim() == 1:
+            pitch = pitch.unsqueeze(1)
+            
         p_emb = self.pitch_proj(pitch.unsqueeze(-1))      # (B, T, 768)
+        
+        if mask is not None:
+            mask = mask.to(torch.bool)
+            
         attn_out, _ = self.cross_attn(
             query=hubert,            # Q
             key=p_emb, value=p_emb,  # K,V
-            key_padding_mask=mask
+            key_padding_mask=safe_attn_mask(mask) if mask is not None else None
         )
         # HuBERT へ pitch 情報を注入（residual）
         return self.ln(hubert + attn_out)                 # (B, T, 768)
