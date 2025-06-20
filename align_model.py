@@ -197,6 +197,12 @@ class TransformerAligner(nn.Module):
               + self.ce_weight*loss_ce
         if torch.isnan(total):
             total = torch.nan_to_num(total)
+
+        self.last_preds = {
+            "hubert_pred": pred_hubert,
+            "pitch_pred":  pred_pitch
+        }
+        
         return total, {
             'hubert_l1': loss_h,
             'pitch_l1': loss_p,

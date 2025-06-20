@@ -76,7 +76,8 @@ class AlignmentRVCSystem(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
         loss_align, metrics = self.aligner(src_h, src_p, tgt_h, tgt_p)
-        pred_hubert, pred_pitch = self.aligner.greedy_decode(src_h, src_p)
+        pred_hubert, pred_pitch = self.aligner.last_preds['hubert_pred'], self.aligner.last_preds['pitch_pred']
+        #self.aligner.greedy_decode(src_h, src_p)
         mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
         loss_mel = F.l1_loss(mel_pred, mel_tgt)
         total_loss = self.hparams.align_weight * loss_align + self.hparams.mel_weight * loss_mel
@@ -90,7 +91,8 @@ class AlignmentRVCSystem(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
         loss_align, _ = self.aligner(src_h, src_p, tgt_h, tgt_p)
-        pred_hubert, pred_pitch = self.aligner.greedy_decode(src_h, src_p)
+        pred_hubert, pred_pitch = self.aligner.last_preds['hubert_pred'], self.aligner.last_preds['pitch_pred']       
+        #self.aligner.greedy_decode(src_h, src_p)
         mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
         loss_mel = F.l1_loss(mel_pred, mel_tgt)
         self.log("val_loss_mel", loss_mel)
