@@ -1,71 +1,88 @@
-import torch, math
+# lora_rvc.py
+import torch
 import torch.nn as nn
 import torch.nn.utils.parametrize as P
 from melmodel import PosteriorEncoder, ConformerGenerator, CrossAttnFusion
 
-class LoRAParam(nn.Module):
-    def __init__(self, w, rank=4, alpha=1.0):
+# ————————— AdapterParametrization —————————
+class AdapterParametrization(nn.Module):
+    def __init__(self, W_orig: nn.Parameter, rank: int = 4, alpha: float = 1.0):
         super().__init__()
-        in_ch, out_ch = w.size(1), w.size(0)          # (in, out)
+        out_ch, in_ch = W_orig.shape
         self.scale = alpha / rank
-        self.A = nn.Parameter(torch.randn(in_ch, rank) * 0.02)   # (in , r)
-        self.B = nn.Parameter(torch.zeros(rank, out_ch))         # (r  , out)
+        # LoRA 行列
+        self.A = nn.Parameter(torch.randn(in_ch, rank) * 0.02)
+        self.B = nn.Parameter(torch.zeros(rank, out_ch))
 
-    def forward(self, w_orig):                                    # w_orig: (out, in)
-        # ▲ A @ B → (in, out) を転置して (out, in) に合わせる
-        delta = (self.A @ self.B).T * self.scale                  # (out, in)
-        return w_orig + delta
-   
+    def forward(self, W):
+        # W: (out, in)
+        delta = (self.A @ self.B).T * self.scale  # (out, in)
+        return W + delta
+
+# ————————— インジェクト関数 —————————
 def inject_lora(module: nn.Module, rank: int = 4, alpha: float = 1.0):
     """
-    再帰的に走査し、以下を LoRA 化していく
+    module の子モジュールを再帰的にたどって、
       • nn.Linear.weight
       • nn.MultiheadAttention.in_proj_weight
       • nn.MultiheadAttention.out_proj.weight
+    に AdapterParametrization を登録します。
     """
     for child in module.children():
-        # 1) Linear
         if isinstance(child, nn.Linear):
             P.register_parametrization(child, "weight",
-                LoRAParam(child.weight, rank, alpha))
-        # 2) MHA
+                AdapterParametrization(child.weight, rank, alpha))
         elif isinstance(child, nn.MultiheadAttention):
-            # in_proj_weight は Parameter
+            # QKV 投影
             P.register_parametrization(child, "in_proj_weight",
-                LoRAParam(child.in_proj_weight, rank, alpha))
-            # out_proj は nn.Linear
+                AdapterParametrization(child.in_proj_weight, rank, alpha))
+            # 出力投影
             P.register_parametrization(child.out_proj, "weight",
-                LoRAParam(child.out_proj.weight, rank, alpha))
-        # dive deeper
+                AdapterParametrization(child.out_proj.weight, rank, alpha))
         inject_lora(child, rank, alpha)
 
-# ------------------------------------------------------
+# ————————— RVCStyleVC_LoRA クラス —————————
 class RVCStyleVC_LoRA(nn.Module):
-    def __init__(self, ckpt_path, *, latent_ch=256, d_model=256,
-                 n_conformer=8, nhead=8, rank=4, alpha=1.):
+    def __init__(
+        self,
+        ckpt_path: str,
+        *,
+        latent_ch: int = 256,
+        d_model: int = 256,
+        n_conformer: int = 4,
+        nhead: int = 4,
+        rank: int = 4,
+        alpha: float = 1.0,
+    ):
         super().__init__()
-        # 1) ― ベースモデル（LoRA 無し）
+        # 1) 元モデルインスタンス生成（コードは一切変更なし）
         self.encoder = PosteriorEncoder()
+        # fusion だけ差し替え済みの CrossAttnFusion を使う
         self.encoder.fusion = CrossAttnFusion(768, nhead, dropout=0.1)
-        self.generator = ConformerGenerator(latent_ch, d_model,
-                                            n_conformer=n_conformer, nhead=nhead)
 
-        # 2) ― ckpt 読み込み（`gen.` prefix を剥いでフィルタ）
+        self.generator = ConformerGenerator(
+            in_ch=latent_ch,
+            d_model=d_model,
+            n_conformer=n_conformer,
+            nhead=nhead,
+            dropout=0.1,
+        )
+
+        # 2) チェックポイント読み込み（generator 部分）
         raw = torch.load(ckpt_path, map_location="cpu")
-        raw = raw.get("state_dict", raw)          # Lightning / plain 両対応
-
-        gen_only = {k[4:]: v for k, v in raw.items()           # `gen.` を削る
-                    if k.startswith("gen.")}                  # それ以外は無視
-        missing, unexpected = self.load_state_dict(gen_only, strict=True)
+        state = raw.get("state_dict", raw)
+        gen_state = {k[4:]: v for k,v in state.items() if k.startswith("gen.")}
+        missing, unexpected = self.generator.load_state_dict(gen_state, strict=True)
         if missing or unexpected:
-            raise RuntimeError(f"← まだ不一致があります: "
-                               f"missing={len(missing)}, unexpected={len(unexpected)}")
+            raise RuntimeError(f"チェックポイント不一致: missing={missing}, unexpected={unexpected}")
 
-        # 3) ― LoRA 注入 & それ以外を凍結
-        inject_lora(self, rank, alpha)
-        for n, p in self.named_parameters():
-            p.requires_grad = ("parametrizations" in n)   # LoRA 行列だけ学習
+        # 3) LoRA 注入 & 重み凍結
+        inject_lora(self.encoder,   rank, alpha)
+        inject_lora(self.generator, rank, alpha)
+        # parametrization（=LoRA部）だけ学習
+        for name, p in self.named_parameters():
+            p.requires_grad = "parametrizations" in name
 
     def forward(self, hubert, pitch, target_length=None, mask=None):
-        z = self.encoder(hubert, pitch, mask)
-        return self.generator(z, target_length)
+        z = self.encoder(hubert, pitch, mask)           # (B, latent_ch, T)
+        return self.generator(z, target_length)         # (B, T, mel_dim)
