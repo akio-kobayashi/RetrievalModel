@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.utils.parametrize as P
 from melmodel import PosteriorEncoder, ConformerGenerator, CrossAttnFusion
+import re
 
 def _infer_from_ckpt(sd):
     """
