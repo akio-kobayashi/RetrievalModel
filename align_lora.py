@@ -55,7 +55,8 @@ class LoRAFFN(nn.Module):
         h = self.ffn[1](h)
         out = self.ffn[2](h)
         # LoRA 部分
-        delta = (h @ (self.A @ self.B).T) * self.scale  # (B, T, out_ch)
+        #delta = (h @ (self.A @ self.B).T) * self.scale  # (B, T, out_ch)
+        delta = torch.matmul(h, self.A @ self.B) * self.scale  # (B, T, out_ch)
         return out + delta
 
 # -----------------------
