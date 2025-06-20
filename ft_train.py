@@ -10,20 +10,16 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from lora_dataset import KeySynchronizedDataset, collate_alignment_rvc
-from lora_solver import AlignmentRVCSystem
+from lora_solver import AlignmentRVCSystem  # ← 通常finetune版を使用
 
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
 warnings.filterwarnings("ignore", message="The number of training batches.*")
-warnings.filterwarnings(
-    "ignore",
-    message=r".*does not have many workers which may be a bottleneck.*"
-)
-
+warnings.filterwarnings("ignore", message=r".*does not have many workers which may be a bottleneck.*")
 
 def train(cfg: dict):
     # ─── dataset ──────────────────────
-    stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)  
+    stats = torch.load(cfg["stats_tensor"], map_location="cpu", weights_only=True)
     train_ds = KeySynchronizedDataset(cfg["train_csv"],
                                       cfg["train_mel_csv"],
                                       stats,
@@ -48,8 +44,8 @@ def train(cfg: dict):
         collate_fn=collate_alignment_rvc,
         pin_memory=True,
     )
-    
-    # ─── model ────────────────────────────────────────────────
+
+    # ─── model ────────────────────────
     model = AlignmentRVCSystem(
         align_ckpt    = cfg["align_ckpt"],
         mel_ckpt      = cfg["mel_ckpt"],
@@ -67,13 +63,11 @@ def train(cfg: dict):
         rvc_d_model      = cfg.get("rvc_d_model", 256),
         rvc_n_conformer  = cfg.get("rvc_n_conformer", 8),
         rvc_nhead        = cfg.get("rvc_nhead", 8),
-        lora_rank        = cfg.get("lora_rank", 4),
-        lora_alpha       = cfg.get("lora_alpha", 1.0),
         align_weight     = cfg.get("align_weight", 1.0),
         mel_weight       = cfg.get("mel_weight", 1.0),
     )
 
-    # ─── callbacks / logger ───────────────────────────────────
+    # ─── callbacks / logger ─────────────
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
         filename="{epoch:02d}-{val_loss:.4f}",
@@ -86,7 +80,7 @@ def train(cfg: dict):
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="align_rvc")
 
-    # ─── trainer ──────────────────────────────────────────────
+    # ─── trainer ───────────────────────
     trainer = pl.Trainer(
         max_epochs=cfg.get("max_epochs", 100),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -101,7 +95,7 @@ def train(cfg: dict):
         check_val_every_n_epoch=1,
     )
 
-    # ─── fit ─────────────────────────────────────────────────
+    # ─── training ──────────────────────
     trainer.fit(model, train_dl, valid_dl)
 
 
