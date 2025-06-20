@@ -72,26 +72,37 @@ class RVCStyleVC_LoRA(nn.Module):
         # 2) ― ckpt 読み込み（Lightning / plain どちらでも OK）
         # ------------------------------------------------------------
         raw = torch.load(ckpt_path, map_location="cpu")
-        raw = raw.get("state_dict", raw)           # ← Lightning の場合は state_dict を取り出す
-
-        # -------- ① キー一覧をざっと確認（デバッグ用：必要なら一時的に） --------
-        # print("\n".join(list(raw.keys())[:40]))
-        
-        # -------- ② encoder / generator 用に prefix を切り分ける -------------
+        raw = raw.get("state_dict", raw)
 
         enc_state, gen_state = {}, {}
+
+        # ------- ① prefix テーブルを用意してループ１回で振り分け ------------
+        prefix_map = {
+            "gen.encoder.":    ("enc",  len("gen.encoder.")),
+            "gen.generator.":  ("gen", len("gen.generator.")),
+            "encoder.":        ("enc",  len("encoder.")),
+            "generator.":      ("gen", len("generator.")),
+        }
+
         for k, v in raw.items():
-            if k.startswith("encoder."):
-                enc_state[k[len("encoder."):]] = v      # "encoder." を削除して格納
-            elif k.startswith("generator."):
-                gen_state[k[len("generator."):]] = v    # 同上
+            for pre, (which, cut) in prefix_map.items():
+                if k.startswith(pre):
+                    if which == "enc":
+                        enc_state[k[cut:]] = v
+                    else:  # "gen"
+                        gen_state[k[cut:]] = v
+                        break   # マッチしたら次のキーへ
+                # else 節は不要（マッチしなければ何もしない）
 
-        # -------- ③ 想定外のキーが残っていないか軽くチェック -----------------
-        unused = [k for k in raw.keys() if not (k.startswith("encoder.") or k.startswith("generator."))]
+        # ------- ② 使わなかったキーを警告（確認用） -------------------------
+        unused = [k for k in raw.keys() if k not in
+                  {pre+k2 for pre in prefix_map for k2 in
+                   enc_state.keys() | gen_state.keys()}]
         if unused:
-            print(f"[WARN] {len(unused)} keys were ignored (not encoder./generator.*): e.g. {unused[:5]}")
+            print(f"[WARN] {len(unused)} keys remain unused, e.g. {unused[:5]}")
 
-        # -------- ④ それぞれロード（strict=True で形状もチェック） ------------
+
+        # ------- ③ strict=True でロード --------------------------------------
         self.encoder.load_state_dict(enc_state, strict=True)
         self.generator.load_state_dict(gen_state, strict=True)
         
