@@ -68,14 +68,20 @@ class RVCStyleVC_LoRA(nn.Module):
             dropout=0.1,
         )
 
-        # 2) チェックポイント読み込み（generator 部分）
+        # 2) ― ckpt 読み込み（Lightning / plain どちらでも）
         raw = torch.load(ckpt_path, map_location="cpu")
-        state = raw.get("state_dict", raw)
-        gen_state = {k[4:]: v for k,v in state.items() if k.startswith("gen.")}
-        missing, unexpected = self.generator.load_state_dict(gen_state, strict=True)
-        if missing or unexpected:
-            raise RuntimeError(f"チェックポイント不一致: missing={missing}, unexpected={unexpected}")
+        raw = raw.get("state_dict", raw)
 
+        # ---------------- encoder 部分だけ抽出して読む ----------------
+        enc_state = {k[len("encoder."):]: v
+                     for k, v in raw.items() if k.startswith("encoder.")}
+        self.encoder.load_state_dict(enc_state, strict=True)
+
+        # ---------------- generator 部分だけ抽出して読む ---------------
+        gen_state = {k[len("generator."):]: v
+                     for k, v in raw.items() if k.startswith("generator.")}
+        self.generator.load_state_dict(gen_state, strict=True)
+        
         # 3) LoRA 注入 & 重み凍結
         inject_lora(self.encoder,   rank, alpha)
         inject_lora(self.generator, rank, alpha)
