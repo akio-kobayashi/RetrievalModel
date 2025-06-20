@@ -68,18 +68,31 @@ class RVCStyleVC_LoRA(nn.Module):
             dropout=0.1,
         )
 
-        # 2) ― ckpt 読み込み（Lightning / plain どちらでも）
+        # ------------------------------------------------------------
+        # 2) ― ckpt 読み込み（Lightning / plain どちらでも OK）
+        # ------------------------------------------------------------
         raw = torch.load(ckpt_path, map_location="cpu")
-        raw = raw.get("state_dict", raw)
+        raw = raw.get("state_dict", raw)           # ← Lightning の場合は state_dict を取り出す
 
-        # ---------------- encoder 部分だけ抽出して読む ----------------
-        enc_state = {k[len("encoder."):]: v
-                     for k, v in raw.items() if k.startswith("encoder.")}
+        # -------- ① キー一覧をざっと確認（デバッグ用：必要なら一時的に） --------
+        # print("\n".join(list(raw.keys())[:40]))
+        
+        # -------- ② encoder / generator 用に prefix を切り分ける -------------
+
+        enc_state, gen_state = {}, {}
+        for k, v in raw.items():
+            if k.startswith("encoder."):
+                enc_state[k[len("encoder."):]] = v      # "encoder." を削除して格納
+            elif k.startswith("generator."):
+                gen_state[k[len("generator."):]] = v    # 同上
+
+        # -------- ③ 想定外のキーが残っていないか軽くチェック -----------------
+        unused = [k for k in raw.keys() if not (k.startswith("encoder.") or k.startswith("generator."))]
+        if unused:
+            print(f"[WARN] {len(unused)} keys were ignored (not encoder./generator.*): e.g. {unused[:5]}")
+
+        # -------- ④ それぞれロード（strict=True で形状もチェック） ------------
         self.encoder.load_state_dict(enc_state, strict=True)
-
-        # ---------------- generator 部分だけ抽出して読む ---------------
-        gen_state = {k[len("generator."):]: v
-                     for k, v in raw.items() if k.startswith("generator.")}
         self.generator.load_state_dict(gen_state, strict=True)
         
         # 3) LoRA 注入 & 重み凍結
