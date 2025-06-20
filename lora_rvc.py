@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.utils.parametrize as P
 from melmodel import PosteriorEncoder, ConformerGenerator, CrossAttnFusion
 
-def _infer_generator_hparams(sd):
+def _infer_from_ckpt(sd):
     """
     ckpt の state_dict から
       latent_ch (= input_proj.in_channels),
