@@ -40,8 +40,9 @@ class LoRAFFN(nn.Module):
         super().__init__()
         # ffn = nn.Sequential(Linear(in→hidden), Activation, Linear(hidden→in))
         self.ffn = ffn
-        # LoRA を掛けるのは出力側の Linear
-        linear_out: nn.Linear = ffn[-1]
+        linears = [m for m in ffn if isinstance(m, nn.Linear)]
+        assert linears, "LoRAFFN: no nn.Linear in ffn."
+        linear_out = linears[-1]
         in_ch, out_ch = linear_out.in_features, linear_out.out_features
         self.A = nn.Parameter(torch.randn(in_ch, rank) * 0.02)
         self.B = nn.Parameter(torch.zeros(rank, out_ch))
