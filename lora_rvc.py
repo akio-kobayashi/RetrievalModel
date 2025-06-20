@@ -4,6 +4,25 @@ import torch.nn as nn
 import torch.nn.utils.parametrize as P
 from melmodel import PosteriorEncoder, ConformerGenerator, CrossAttnFusion
 
+def _infer_generator_hparams(sd):
+    """
+    ckpt の state_dict から
+      latent_ch (= input_proj.in_channels),
+      d_model   (= input_proj.out_channels),
+      n_blocks  (= generator.blocks の数)
+    を推定して返す
+    """
+    # ① input_proj の shape で in/out ch を取得
+    w_inproj = sd['gen.generator.input_proj.weight'] if 'gen.generator.input_proj.weight' in sd \
+               else sd['generator.input_proj.weight']           # Lightning / plain 両対応
+    d_model_ckpt, latent_ch_ckpt, *_ = w_inproj.shape           # (out_ch, in_ch, k)
+    
+    # ② blocks.* から最大 id を取って層数推定
+    pat = re.compile(r'(?:gen\.)?generator\.blocks\.(\d+)\.')
+    n_blocks_ckpt = max(int(m.group(1)) for k in sd.keys() if (m := pat.match(k))) + 1
+    
+    return latent_ch_ckpt, d_model_ckpt, n_blocks_ckpt
+
 # ————————— AdapterParametrization —————————
 class AdapterParametrization(nn.Module):
     def __init__(self, W_orig: nn.Parameter, rank: int = 4, alpha: float = 1.0):
@@ -46,18 +65,31 @@ class RVCStyleVC_LoRA(nn.Module):
     def __init__(
         self,
         ckpt_path: str,
-        *,
-        latent_ch: int = 256,
-        d_model: int = 256,
-        n_conformer: int = 4,
-        nhead: int = 4,
+        *,                       # 昔からある手動引数（ None なら自動推定）
+        latent_ch: int | None = None,
+        d_model:   int | None = None,
+        n_conformer: int | None = None,
+        nhead: int = 8,
         rank: int = 4,
         alpha: float = 1.0,
     ):
         super().__init__()
-        # 1) 元モデルインスタンス生成（コードは一切変更なし）
-        self.encoder = PosteriorEncoder()
-        # fusion だけ差し替え済みの CrossAttnFusion を使う
+
+        # 1) ckpt 読み込み ------------------------------------------------------
+        raw = torch.load(ckpt_path, map_location="cpu")
+        sd  = raw.get("state_dict", raw)             # Lightning / plain 両対応
+
+        # 2) ★ 必要なら ckpt から自動推定 -------------------------------------
+        if None in (latent_ch, d_model, n_conformer):
+            latent_ch_ckpt, d_model_ckpt, n_blocks_ckpt = _infer_from_ckpt(sd)
+            latent_ch    = latent_ch    or latent_ch_ckpt
+            d_model      = d_model      or d_model_ckpt
+            n_conformer  = n_conformer  or n_blocks_ckpt
+            print(f"[INFO] auto-infer → latent={latent_ch}, d_model={d_model}, "
+                  f"n_blocks={n_conformer}")
+
+        # 3) モデル生成（コードはオリジナルのまま） ----------------------------
+        self.encoder = PosteriorEncoder(latent_ch=latent_ch)
         self.encoder.fusion = CrossAttnFusion(768, nhead, dropout=0.1)
 
         self.generator = ConformerGenerator(
@@ -68,51 +100,23 @@ class RVCStyleVC_LoRA(nn.Module):
             dropout=0.1,
         )
 
-        # ------------------------------------------------------------
-        # 2) ― ckpt 読み込み（Lightning / plain どちらでも OK）
-        # ------------------------------------------------------------
-        raw = torch.load(ckpt_path, map_location="cpu")
-        raw = raw.get("state_dict", raw)
-
+        # 4) state_dict を prefix で振り分け -----------------------------------
         enc_state, gen_state = {}, {}
+        for k, v in sd.items():
+            if   k.startswith("gen.encoder."): enc_state[k[12:]] = v
+            elif k.startswith("encoder.")    : enc_state[k[8:]]  = v
+            elif k.startswith("gen.generator."): gen_state[k[14:]] = v
+            elif k.startswith("generator.")    : gen_state[k[10:]] = v
 
-        # ------- ① prefix テーブルを用意してループ１回で振り分け ------------
-        prefix_map = {
-            "gen.encoder.":    ("enc",  len("gen.encoder.")),
-            "gen.generator.":  ("gen", len("gen.generator.")),
-            "encoder.":        ("enc",  len("encoder.")),
-            "generator.":      ("gen", len("generator.")),
-        }
-
-        for k, v in raw.items():
-            for pre, (which, cut) in prefix_map.items():
-                if k.startswith(pre):
-                    if which == "enc":
-                        enc_state[k[cut:]] = v
-                    else:  # "gen"
-                        gen_state[k[cut:]] = v
-                        break   # マッチしたら次のキーへ
-                # else 節は不要（マッチしなければ何もしない）
-
-        # ------- ② 使わなかったキーを警告（確認用） -------------------------
-        unused = [k for k in raw.keys() if k not in
-                  {pre+k2 for pre in prefix_map for k2 in
-                   enc_state.keys() | gen_state.keys()}]
-        if unused:
-            print(f"[WARN] {len(unused)} keys remain unused, e.g. {unused[:5]}")
-
-
-        # ------- ③ strict=True でロード --------------------------------------
+        # 5) ロード（strict=True でズレがあれば即エラー） ----------------------
         self.encoder.load_state_dict(enc_state, strict=True)
         self.generator.load_state_dict(gen_state, strict=True)
-        
-        # 3) LoRA 注入 & 重み凍結
-        inject_lora(self.encoder,   rank, alpha)
-        inject_lora(self.generator, rank, alpha)
-        # parametrization（=LoRA部）だけ学習
-        for name, p in self.named_parameters():
-            p.requires_grad = "parametrizations" in name
 
-    def forward(self, hubert, pitch, target_length=None, mask=None):
-        z = self.encoder(hubert, pitch, mask)           # (B, latent_ch, T)
-        return self.generator(z, target_length)         # (B, T, mel_dim)
+        # 6) LoRA 注入 & パラメータ凍結 ----------------------------------------
+        inject_lora(self, rank, alpha)
+        for n, p in self.named_parameters():
+            p.requires_grad = "parametrizations" in n    # A/B だけ学習
+
+    def forward(self, hubert, pitch, *, target_length=None, mask=None):
+        z = self.encoder(hubert, pitch, mask)
+        return self.generator(z, target_length)
