@@ -18,7 +18,7 @@ def main():
     #parser.add_argument('--out_csv', default='melgen.csv')
     #parser.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--max_len', type=int, default=1000)
-    parser.add_argument('--config', type=str)
+    #parser.add_argument('--config', type=str)
     args = parser.parse_args()
 
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
@@ -28,8 +28,9 @@ def main():
     stats = torch.load(args.stats, map_location="cpu", weights_only=True)
     
     # ─── モデル読み込み
+    '''
     with Path(args.config).open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)    
+        cfg = yaml.safe_load(f)
     model = AlignmentRVCSystem(
         align_ckpt    = cfg.get("align_ckpt", None),
         mel_ckpt      = cfg.get("mel_ckpt",None),
@@ -53,7 +54,8 @@ def main():
         update_rvc       = cfg.get("update_rvc", True),
         load_from_pretrained = cfg.get("load_from_pretrained", False),
     )
-    model.load_from_ckpt(args.ckpt)
+    '''
+    model = AlignmentRVCSystem.load_from_ckpt(args.ckpt)
     model.eval()
 
     # ─── CSV読み込み ───
