@@ -91,6 +91,7 @@ class KeySynchronizedDataset(Dataset):
         self.mel_mean = stats_tensor["mel_mean"].clone().detach().float().view(1, -1)
         self.mel_std  = stats_tensor["mel_std"].clone().detach().float().view(1, -1) + 1e-9
         self.map_location = map_location
+        self.current_key = None
 
     def __len__(self):
         return len(self.keys)
@@ -114,4 +115,10 @@ class KeySynchronizedDataset(Dataset):
             mel = mel.transpose(0, 1)
 
         mel = (mel - self.mel_mean) / self.mel_std
+
+        self.current_key = key
         return src_hubert, src_pitch, tgt_hubert, tgt_pitch, mel
+
+    def unnormalize(self, mel):
+        return mel * self.mel_std + self.mel_mean
+    
