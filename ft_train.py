@@ -74,7 +74,7 @@ def train(cfg: dict):
     load_from_pretrained = cfg.get("load_from_pretrained", True)
     if not load_from_pretrained:
         ckpt = cfg.get("model_ckpt", None)
-        model.load_from_checkpoint(ckpt)
+        model = model = AlignmentRVCSystem.load_from_checkpoint(ckpt)
         update_aligner = cfg.get("update_aligner", True)
         update_rvc = cfg.get("update_rvc", True)
         if not update_aligner:
