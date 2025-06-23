@@ -9,8 +9,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from lora_dataset import KeySynchronizedDataset, collate_alignment_rvc
-from lora_solver import AlignmentRVCSystem  # ← 通常finetune版を使用
+from ft_dataset import KeySynchronizedDataset, collate_alignment_rvc
+from ft_solver import AlignmentRVCSystem, freeze_module, unfreeze_module
 
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
@@ -23,7 +23,8 @@ def train(cfg: dict):
     train_ds = KeySynchronizedDataset(cfg["train_csv"],
                                       cfg["train_mel_csv"],
                                       stats,
-                                      shuffle=True)
+                                      shuffle=True,
+                                      max_length=cfg.get('max_length', 512))
     train_dl = DataLoader(
         train_ds,
         batch_size=cfg.get("batch_size", 8),
@@ -65,13 +66,31 @@ def train(cfg: dict):
         rvc_nhead        = cfg.get("rvc_nhead", 8),
         align_weight     = cfg.get("align_weight", 1.0),
         mel_weight       = cfg.get("mel_weight", 1.0),
+        update_aligner   = cfg.get("update_aligner", True),
+        update_rvc       = cfg.get("update_rvc", True),
+        load_from_pretrained = cfg.get("load_from_pretrained", True),
     )
 
+    load_from_pretrained = cfg.get("load_from_pretrained", True)
+    if not load_from_pretrained:
+        ckpt = cfg.get("model_ckpt", None)
+        model.load_from_checkpoint(ckpt)
+        update_aligner = cfg.get("update_aligner", True)
+        update_rvc = cfg.get("update_rvc", True)
+        if not update_aligner:
+            freeze_module(model.aligner)
+        else:
+            unfreeze_module(model.aligner)
+        if not update_rvc:
+            freeze_module(model.rvc)
+        else:
+            unfreeze_module(model.rvc)
+                
     # ─── callbacks / logger ─────────────
     ckpt_cb = ModelCheckpoint(
         dirpath=cfg["ckpt_dir"],
         filename="{epoch:02d}-{val_loss:.4f}",
-        monitor="val_loss",
+        monitor="val_loss_mel",
         mode="min",
         save_top_k=3,
         save_last=True,

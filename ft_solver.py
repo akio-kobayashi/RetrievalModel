@@ -1,11 +1,21 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.optim import AdamW
 
 from align_model import TransformerAligner
-from rvc_model import RVCStyleVC
+from melmodel import RVCStyleVC
+from melsolver import MelVCSystem
 
+def freeze_module(module):
+    for param in module.parameters():
+        param.requires_grad = False
+
+def unfreeze_module(module):
+    for param in module.parameters():
+        param.requires_grad = True
+        
 class AlignmentRVCSystem(pl.LightningModule):
     def __init__(
         self,
@@ -31,7 +41,10 @@ class AlignmentRVCSystem(pl.LightningModule):
         rvc_nhead: int = 8,
         # loss weights
         align_weight: float = 1.0,
-        mel_weight: float = 1.0
+        mel_weight: float = 1.0,
+        update_aligner: bool = True,
+        update_rvc: bool = True,
+        load_from_pretrained = True,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -48,25 +61,53 @@ class AlignmentRVCSystem(pl.LightningModule):
             diag_weight=diag_w,
             ce_weight=ce_w
         )
-        ckpt = torch.load(align_ckpt, map_location="cpu")
-        state_dict = ckpt.get("state_dict", ckpt)
-        state_dict = {
-            k.removeprefix("model.") if k.startswith("model.") else k: v
-            for k, v in state_dict.items()
-        }
-        self.aligner.load_state_dict(state_dict, strict=True)
-
+        if load_from_pretrained:
+            ckpt = torch.load(align_ckpt, map_location="cpu")
+            state_dict = ckpt.get("state_dict", ckpt)
+            state_dict = {
+                k.removeprefix("model.") if k.startswith("model.") else k: v
+                for k, v in state_dict.items()
+            }
+            self.aligner.load_state_dict(state_dict, strict=True)
 
         # 2) 通常のRVCモデル（LoRAなし）
-        self.rvc = RVCStyleVC(ckpt_path=mel_ckpt,
-                              latent_ch = latent_ch,
-                              d_model = rvc_d_model,
-                              n_conformer = rvc_n_conformer,
-                              rvc_nhead = rvc_head
-                             )
+        mel_model = MelVCSystem(
+            lr_g=2e-4,
+            lr_d=2e-4,
+            lambda_fm=2.0,
+            lambda_mel=1.0,
+            lambda_adv=1.0,
+            sched_gamma=0.5,
+            sched_step=200,
+            grad_accum=1,
+            warmup_epochs=10
+        )
 
+        # ---------- 2. checkpoint を読み込み ----------
+        if load_from_pretrained:
+            ckpt = torch.load(mel_ckpt, map_location="cpu")
+      
+            self.rvc = RVCStyleVC(
+                latent_ch=latent_ch,
+                d_model=rvc_d_model,
+                n_conformer=rvc_n_conformer,
+                nhead=rvc_nhead
+            )
+            self.rvc.load_state_dict(torch.load(mel_ckpt, map_location="cpu"))
+        
         self.train_losses = []
         self.val_losses = []
+
+        if load_from_pretrained:
+            if not update_aligner:
+                freeze_module(self.aligner)
+            else:
+                unfreeze_module(self.aligner)
+
+            if not update_rvc:
+                freeze_module(self.rvc)
+            else:
+                unfreeze_module(self.rvc)
 
     def forward(self, src_hubert, src_pitch, max_len: int, mel_target_len: int):
         pred_hubert, pred_pitch = self.aligner.greedy_decode(src_hubert, src_pitch, max_len)
@@ -114,7 +155,7 @@ class AlignmentRVCSystem(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = AdamW(
-          filter(lambda p: p.requrires_grad, self.prameters()),
+          filter(lambda p: p.requires_grad, self.parameters()),
           lr = self.hparams.lr
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
