@@ -110,6 +110,8 @@ def main():
                 mel_pred = model.forward(src_h.to(device), src_p.to(device), max_len=args.max_len,
                                          mel_target_len=args.max_len).cpu().squeeze(0)
                 mel_pred = valid_ds.unnormalize(mel_pred)
+                print(mel_pred.min(), mel_pred.max(),
+                      mel_pred.mean(), mel_pred.std())
                 out_path = os.path.join(args.out_dir, valid_ds.current_key + "_mel.pt")
                 torch.save(mel_pred, out_path)
             
