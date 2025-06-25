@@ -240,7 +240,19 @@ class TransformerAligner(nn.Module):
                                               self.pitch_proj(pitch_list)], dim=1)
 
                     x = layer['ffn'](x + layer['pitch_attn'](x, pitch_stream, pitch_stream)[0])
-                    x = layer['ffn'](x + layer['cross_attn'](x, memory, memory, attn_mask=attn_mask=compute_diagonal_mask(current.size(1), memory.size(1), self.nu, device))[0])
+                    x2m, _ = layer['cross_attn'](
+                        x,
+                        memory,
+                        memory,
+                        attn_mask=compute_diagonal_mask(
+                            current.size(1),
+                            memory.size(1),
+                            self.nu,
+                            device
+                        )
+                    )
+                    x = layer['ffn'](x + x2m)
+                    #x = layer['ffn'](x + layer['cross_attn'](x, memory, memory, attn_mask=attn_mask=compute_diagonal_mask(current.size(1), memory.size(1), self.nu, device))[0])
 
                 last   = x[:, -1, :]
                 h_pred = self.out_hubert(last)           # (B, hubert_dim)
