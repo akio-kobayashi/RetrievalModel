@@ -20,8 +20,17 @@ def compute_diagonal_mask(T: int, S: int, nu: float = 0.3, device=None) -> torch
     mask = torch.log(weight)
     mask = torch.clamp(mask, min=-1e9)
 
-    all_inf = (mask == float("-inf")).all(dim=-1, keepdim=True)
-    mask = mask.masked_fill(all_inf, 0.0)
+    # ---- 追加：行がすべて -1e9 なら中心列だけ 0.0 にする ----
+    bad_row = (mask == -1e9).all(dim=-1)         # shape (T,)
+    if bad_row.any():
+        center_idx = (torch.arange(S, device=device) / (S - 1)).unsqueeze(0)  # [1,S]
+        center_idx = (center_idx - tgt).abs().argmin(dim=-1)                  # 最近接列
+        mask[bad_row, :] = -1e9                                               # まず全部 -1e9
+        mask[bad_row, center_idx[bad_row]] = 0.0                              # 中央 1 列だけ 0
+    # -----------------------------------------------------------
+
+    #all_inf = (mask == float("-inf")).all(dim=-1, keepdim=True)
+    #mask = mask.masked_fill(all_inf, 0.0)
     
     return mask
 
