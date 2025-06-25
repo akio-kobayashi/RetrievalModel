@@ -152,6 +152,7 @@ class TransformerAligner(nn.Module):
 
         # Input fusion
         x = self.hubert_proj(src_hubert) + self.pitch_proj(src_pitch.unsqueeze(-1))
+        x = self.posenc(x)
         
         # Precompute pitch stream for encoder
         p_stream_enc = self.pitch_proj(src_pitch.unsqueeze(-1))  # (B, S, d_model)
@@ -174,7 +175,8 @@ class TransformerAligner(nn.Module):
         tgt_p = self.pitch_proj(tgt_pitch.unsqueeze(-1))
         tgt_fuse = tgt_h + tgt_p
         x = torch.cat([bos, tgt_fuse], dim=1)
-
+        x = self.posenc(x)
+        
         # Prepare pitch stream decoder
         pitch_only = tgt_p
         pitch_bos = torch.zeros(B,1,self.d_model, device=device)
