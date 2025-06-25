@@ -36,18 +36,15 @@ warnings.filterwarnings(
 
 def attach_nan_hooks(model):
     def hook(mod, inp, out):
-        # ① 出力がテンソル ／ タプル ／ リスト かを判定
-        if torch.is_tensor(out):
-            out_tensor = out
-        elif isinstance(out, (tuple, list)) and len(out) and torch.is_tensor(out[0]):
-            out_tensor = out[0]            # MultiheadAttention の本体
-        else:
-            return                         # テンソルでなければ無視
-
-        # ② NaN / Inf を検出
+        # inp は (Q, K, V) いずれも (t_len, b, d)
+        for name, t in zip(("Q", "K", "V"), inp):
+            if torch.isnan(t).any() or torch.isinf(t).any():
+                print(f"[NaN] in {mod.__class__.__name__} input {name}")
+                raise RuntimeError("abort")
+        out_tensor = out[0] if isinstance(out, (tuple, list)) else out
         if torch.isnan(out_tensor).any() or torch.isinf(out_tensor).any():
-            print(f"[NaN] detected in {mod.__class__.__name__}")
-            raise RuntimeError("NaN detected – abort forward pass")
+            print(f"[NaN] produced by {mod.__class__.__name__}")
+            raise RuntimeError("abort")        
 
     # ③ 代表的な層にだけ付ける
     for m in model.modules():
