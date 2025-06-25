@@ -34,6 +34,22 @@ warnings.filterwarnings(
     module="torch.nn.modules.conv"
 )
 
+def attach_nan_hooks(model):
+    def hook(mod, inp, out):
+        if torch.isnan(out).any() or torch.isinf(out).any():
+            name = mod.__class__.__name__
+            print(f"[NaN] in {name}")
+            for t in inp:
+                if torch.isnan(t).any():
+                    print("  └─ input has NaN")
+            raise RuntimeError("NaN detected – abort")
+    for m in model.modules():
+        if isinstance(m, (torch.nn.Linear,
+                          torch.nn.MultiheadAttention,
+                          torch.nn.LayerNorm,
+                          torch.nn.Conv1d)):
+            m.register_forward_hook(hook)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckpt', required=True)
@@ -84,6 +100,8 @@ def main():
     model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt)
     model.eval()
 
+    model.attach_nan_hooks(model.aligner)
+    
     # ─── CSV読み込み ───
     valid_ds = KeySynchronizedDataset(args.csv,
                                       args.mel_csv,
