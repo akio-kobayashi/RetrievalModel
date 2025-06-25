@@ -101,7 +101,7 @@ def main():
         load_from_pretrained = cfg.get("load_from_pretrained", False),
     )
     '''
-    model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt)
+    model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt, strict=False)
     model.eval()
 
     #attach_nan_hooks(model.aligner)
