@@ -109,6 +109,8 @@ def main():
                 # mel_tgt_len = mel_tgt.size(1)
                 mel_pred = model.forward(src_h.to(device), src_p.to(device), max_len=args.max_len,
                                          mel_target_len=args.max_len).cpu().squeeze(0)
+                print(mel_pred.min(), mel_pred.max(),
+                      mel_pred.mean(), mel_pred.std())                
                 mel_pred = valid_ds.unnormalize(mel_pred)
                 print(mel_pred.min(), mel_pred.max(),
                       mel_pred.mean(), mel_pred.std())
