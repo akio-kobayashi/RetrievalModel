@@ -1,9 +1,25 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.utils.checkpoint import checkpoint
 #from kornia.losses import SoftDTW
+
+class FixedPositionalEncoding(nn.Module):
+    """学習しない正弦位置エンコーダ（重み互換を保つ）"""
+    def __init__(self, d_model: int, max_len: int = 4000):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        pos = torch.arange(0, max_len).unsqueeze(1)
+        div = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)
+        self.register_buffer("pe", pe)   # ← buffer なので state_dict に入らない
+
+    def forward(self, x: torch.Tensor, start: int = 0) -> torch.Tensor:
+        """x: (B, T, D)"""
+        return x + self.pe[start : start + x.size(1)]
 
 # ----------------------------------------------------------------
 # Diagonal mask function (VoiceTransformer style)
@@ -89,6 +105,8 @@ class TransformerAligner(nn.Module):
         self.hubert_proj = nn.Linear(input_dim_hubert, d_model)
         self.pitch_proj  = nn.Linear(input_dim_pitch, d_model)
 
+        self.posenc = FixedPositionalEncoding(self.d_model, max_len=8000)
+        
         # Encoder layers with modality fusion
         self.encoder_layers = nn.ModuleList()
         for _ in range(num_layers):
@@ -134,7 +152,7 @@ class TransformerAligner(nn.Module):
 
         # Input fusion
         x = self.hubert_proj(src_hubert) + self.pitch_proj(src_pitch.unsqueeze(-1))
-
+        
         # Precompute pitch stream for encoder
         p_stream_enc = self.pitch_proj(src_pitch.unsqueeze(-1))  # (B, S, d_model)
 
@@ -228,6 +246,7 @@ class TransformerAligner(nn.Module):
         
         # --- Encode ---
         x = self.hubert_proj(src_hubert) + self.pitch_proj(src_pitch.unsqueeze(-1))
+        x = self.posenc(x)        
         for layer in self.encoder_layers:
             x = layer['ffn'](x + layer['self_attn'](x, x, x)[0])
 
@@ -280,6 +299,7 @@ class TransformerAligner(nn.Module):
             decoded_p.append(p_pred.unsqueeze(1))
 
             fused = self.hubert_proj(h_pred) + self.pitch_proj(p_pred.unsqueeze(-1))
+            fused = self.posenc(fused.unsqueeze(1), start=current.size(1)).squeeze(1)
             current = torch.cat([current, fused.unsqueeze(1)], dim=1)
 
             ended |= (self.token_classifier(last).argmax(-1) == 1)
