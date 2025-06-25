@@ -100,7 +100,7 @@ def main():
     model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt)
     model.eval()
 
-    model.attach_nan_hooks(model.aligner)
+    attach_nan_hooks(model.aligner)
     
     # ─── CSV読み込み ───
     valid_ds = KeySynchronizedDataset(args.csv,
