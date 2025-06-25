@@ -68,7 +68,7 @@ class AlignmentRVCSystem(pl.LightningModule):
                 k.removeprefix("model.") if k.startswith("model.") else k: v
                 for k, v in state_dict.items()
             }
-            self.aligner.load_state_dict(state_dict, strict=True)
+            self.aligner.load_state_dict(state_dict, strict=False)
 
         # 2) 通常のRVCモデル（LoRAなし）
         mel_model = MelVCSystem(
