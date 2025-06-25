@@ -74,34 +74,7 @@ def main():
     stats = torch.load(args.stats, map_location="cpu", weights_only=True)
     
     # ─── モデル読み込み
-    '''
-    with Path(args.config).open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    model = AlignmentRVCSystem(
-        align_ckpt    = cfg.get("align_ckpt", None),
-        mel_ckpt      = cfg.get("mel_ckpt",None),
-        lr            = cfg.get("lr", 2e-4),
-        input_dim_hubert = cfg.get("input_dim_hubert", 768),
-        input_dim_pitch  = cfg.get("input_dim_pitch", 1),
-        align_d_model    = cfg.get("align_d_model", 256),
-        align_nhead      = cfg.get("align_nhead", 4),
-        align_num_layers = cfg.get("align_num_layers", 3),
-        align_dim_ff     = cfg.get("align_dim_ff", 512),
-        align_dropout    = cfg.get("align_dropout", 0.1),
-        diag_w           = cfg.get("diag_w", 1.0),
-        ce_w             = cfg.get("ce_w", 1.0),
-        latent_ch        = cfg.get("latent_ch", 256),
-        rvc_d_model      = cfg.get("rvc_d_model", 256),
-        rvc_n_conformer  = cfg.get("rvc_n_conformer", 8),
-        rvc_nhead        = cfg.get("rvc_nhead", 8),
-        align_weight     = cfg.get("align_weight", 1.0),
-        mel_weight       = cfg.get("mel_weight", 1.0),
-        update_aligner   = cfg.get("update_aligner", True),
-        update_rvc       = cfg.get("update_rvc", True),
-        load_from_pretrained = cfg.get("load_from_pretrained", False),
-    )
-    '''
-    model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt, strict=False)
+    model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt, strict=False, load_pretrained_model=False)
     model.eval()
 
     #attach_nan_hooks(model.aligner)
