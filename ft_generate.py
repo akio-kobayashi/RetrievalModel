@@ -4,19 +4,45 @@ import os
 from pathlib import Path
 import pandas as pd
 import torch
+from torch.utils.data import DataLoader
 
 from ft_solver import AlignmentRVCSystem
 from ft_dataset import KeySynchronizedDataset, collate_alignment_rvc
+
+import warnings
+# pkg_resourcesの警告を抑制
+warnings.filterwarnings(
+    "ignore",
+    message="pkg_resources is deprecated as an API.*",
+    category=UserWarning,
+    module="lightning_utilities.core.imports"
+)
+
+# TypedStorageの警告を抑制
+warnings.filterwarnings(
+    "ignore",
+    message="TypedStorage is deprecated.*",
+    category=UserWarning,
+    module="torch._utils"
+)
+
+# CuDNN workaroundの警告を抑制
+warnings.filterwarnings(
+    "ignore",
+    message="Applied workaround for CuDNN issue.*",
+    category=UserWarning,
+    module="torch.nn.modules.conv"
+)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckpt', required=True)
     parser.add_argument('--stats', required=True)
-    parser.add_argument('--csv', required=True, nargs='+')
+    parser.add_argument('--csv', required=True)
     parser.add_argument('--mel_csv', required=True)
     parser.add_argument('--out_dir', default='melgen_tensors')
     #parser.add_argument('--out_csv', default='melgen.csv')
-    #parser.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--max_len', type=int, default=1000)
     #parser.add_argument('--config', type=str)
     args = parser.parse_args()
@@ -55,7 +81,7 @@ def main():
         load_from_pretrained = cfg.get("load_from_pretrained", False),
     )
     '''
-    model = AlignmentRVCSystem.load_from_ckpt(args.ckpt)
+    model = AlignmentRVCSystem.load_from_checkpoint(args.ckpt)
     model.eval()
 
     # ─── CSV読み込み ───
@@ -81,10 +107,11 @@ def main():
             with torch.no_grad():
                 src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
                 # mel_tgt_len = mel_tgt.size(1)
-                mel_pred = model.forward(src_h, src_p, max_len=args.max_len, mel_target_len=args.max_len).cpu().squeeze(0)
-                mel_pred = model.unnormalize(mel_pred.transpose(0, 1))
-                out_path = os.path.join(args.out_dir, model.current_key + "_mel.pt")
-                torch.save(mel, out_path)
+                mel_pred = model.forward(src_h.to(device), src_p.to(device), max_len=args.max_len,
+                                         mel_target_len=args.max_len).cpu().squeeze(0)
+                mel_pred = valid_ds.unnormalize(mel_pred)
+                out_path = os.path.join(args.out_dir, valid_ds.current_key + "_mel.pt")
+                torch.save(mel_pred, out_path)
             
         except StopIteration:
             break
