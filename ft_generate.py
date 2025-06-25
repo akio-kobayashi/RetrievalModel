@@ -36,6 +36,10 @@ warnings.filterwarnings(
 
 def attach_nan_hooks(model):
     def hook(mod, inp, out):
+        if isinstance(out, tuple):
+            out_tensor = out[0]      # 0 番目がテンソル本体
+        else:
+            out_tensor = out        
         if torch.isnan(out).any() or torch.isinf(out).any():
             name = mod.__class__.__name__
             print(f"[NaN] in {name}")
