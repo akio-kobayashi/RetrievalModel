@@ -234,51 +234,57 @@ class TransformerAligner(nn.Module):
             p_stream = self.pitch_proj(src_pitch.unsqueeze(-1))
             x = layer['ffn'](x + layer['pitch_attn'](x, p_stream, p_stream)[0])
 
-            memory = x  # (B, S, d_model)
+            #memory = x  # (B, S, d_model)
+        memory = x
+        
+        # --- Decode loop ---
+        current  = self.bos_token.expand(B, 1, self.d_model)
+        decoded_h, decoded_p = [], []
+        ended = torch.zeros(B, dtype=torch.bool, device=device)
+        
+        for t in range(max_len):
+            # mask などはそのまま
+            x = current
+            for layer in self.decoder_layers:
+                x = layer['ffn'](x + layer['self_attn'](x, x, x)[0])
+                
+                pitch_list = torch.cat(decoded_p, dim=1).unsqueeze(-1) if decoded_p else torch.zeros(B, 0, 1, device=device)
+                pitch_stream = torch.cat([torch.zeros(B, 1, self.d_model, device=device),
+                                          self.pitch_proj(pitch_list)], dim=1)
+                
+                x = layer['ffn'](x + layer['pitch_attn'](x, pitch_stream, pitch_stream)[0])
+                float_mask = compute_diagonal_mask(
+                    current.size(1),
+                    memory.size(1),
+                    self.nu,
+                    device
+                )
+                # -1e9 と 0.0 だけを保持
+                float_mask = safe_attn_mask(float_mask, neg_inf=-1e9)
 
-            # --- Decode loop ---
-            current  = self.bos_token.expand(B, 1, self.d_model)
-            decoded_h, decoded_p = [], []
-            ended = torch.zeros(B, dtype=torch.bool, device=device)
+                # bool マスク（True=mask, False=keep）へ変換
+                bool_mask = (float_mask == -1e9)                
+                x2m, _ = layer['cross_attn'](
+                    x,
+                    memory,
+                    memory,
+                    attn_mask=bool_mask
+                )
+                x = layer['ffn'](x + x2m)
+                
+            last   = x[:, -1, :]
+            h_pred = self.out_hubert(last)           # (B, hubert_dim)
+            p_pred = self.out_pitch(last).squeeze(-1)  # (B,)
 
-            for t in range(max_len):
-                # mask などはそのまま
-                x = current
-                for layer in self.decoder_layers:
-                    x = layer['ffn'](x + layer['self_attn'](x, x, x)[0])
+            decoded_h.append(h_pred.unsqueeze(1))
+            decoded_p.append(p_pred.unsqueeze(1))
 
-                    pitch_list = torch.cat(decoded_p, dim=1).unsqueeze(-1) if decoded_p else torch.zeros(B, 0, 1, device=device)
-                    pitch_stream = torch.cat([torch.zeros(B, 1, self.d_model, device=device),
-                                              self.pitch_proj(pitch_list)], dim=1)
+            fused = self.hubert_proj(h_pred) + self.pitch_proj(p_pred.unsqueeze(-1))
+            current = torch.cat([current, fused.unsqueeze(1)], dim=1)
 
-                    x = layer['ffn'](x + layer['pitch_attn'](x, pitch_stream, pitch_stream)[0])
-                    x2m, _ = layer['cross_attn'](
-                        x,
-                        memory,
-                        memory,
-                        attn_mask=compute_diagonal_mask(
-                            current.size(1),
-                            memory.size(1),
-                            self.nu,
-                            device
-                        )
-                    )
-                    x = layer['ffn'](x + x2m)
-                    #x = layer['ffn'](x + layer['cross_attn'](x, memory, memory, attn_mask=attn_mask=compute_diagonal_mask(current.size(1), memory.size(1), self.nu, device))[0])
-
-                last   = x[:, -1, :]
-                h_pred = self.out_hubert(last)           # (B, hubert_dim)
-                p_pred = self.out_pitch(last).squeeze(-1)  # (B,)
-
-                decoded_h.append(h_pred.unsqueeze(1))
-                decoded_p.append(p_pred.unsqueeze(1))
-
-                fused = self.hubert_proj(h_pred) + self.pitch_proj(p_pred.unsqueeze(-1))
-                current = torch.cat([current, fused.unsqueeze(1)], dim=1)
-
-                ended |= (self.token_classifier(last).argmax(-1) == 1)
-                if ended.all():
-                    break
+            ended |= (self.token_classifier(last).argmax(-1) == 1)
+            if ended.all():
+                break
 
         # ----- ここでまとめて return -----
         hubert_seq = torch.cat(decoded_h, dim=1)   # (B, T, hubert_dim)
