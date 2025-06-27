@@ -6,24 +6,46 @@ import pytorch_lightning as pl
 from torch.utils.checkpoint import checkpoint
 #from kornia.losses import SoftDTW
 
+import math
+import torch
+import torch.nn as nn
+
+
 class FixedPositionalEncoding(nn.Module):
-    """学習しない正弦位置エンコーダ（重み互換を保つ）"""
+    """学習しない正弦位置エンコーダ（長さ不足時に自動拡張）"""
     def __init__(self, d_model: int, max_len: int = 4000):
         super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        pos = torch.arange(0, max_len).unsqueeze(1)
-        div = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        self.d_model = d_model
+        self.register_buffer("pe", self._build_pe(max_len))  # state_dict には入らない
+
+    # ──────────────────────────────────────────────
+    # 追加：位置エンコードを生成するユーティリティ
+    # ──────────────────────────────────────────────
+    def _build_pe(self, length: int) -> torch.Tensor:
+        pos = torch.arange(length, dtype=torch.float32).unsqueeze(1)         # [L, 1]
+        div = torch.exp(
+            torch.arange(0, self.d_model, 2, dtype=torch.float32)
+            * (-math.log(10000.0) / self.d_model)
+        )                                                                    # [D/2]
+        pe = torch.zeros(length, self.d_model, dtype=torch.float32)
         pe[:, 0::2] = torch.sin(pos * div)
         pe[:, 1::2] = torch.cos(pos * div)
-        self.register_buffer("pe", pe)   # ← buffer なので state_dict に入らない
+        return pe  # shape [L, D]
 
+    # ──────────────────────────────────────────────
     def forward(self, x: torch.Tensor, start: int = 0) -> torch.Tensor:
-        """x: (B, T, D)"""
+        """
+        Args:
+            x: (B, T, D)
+            start: 位置エンコードの開始インデックス
+        """
         L = x.size(1)
-        if start + L > self.pe.size(0):                # 足りなければ拡張
-            extra = self._build_pe(start + L - self.pe.size(0))
-            self.pe = torch.cat([self.pe, extra.to(self.pe.device)], dim=0)
-        return x + self.pe[start : start + x.size(1)]
+        need = start + L
+        if need > self.pe.size(0):                 # 足りなければ拡張
+            extra = self._build_pe(need - self.pe.size(0)).to(self.pe.device)
+            self.pe = torch.cat([self.pe, extra], dim=0)
+
+        return x + self.pe[start : start + L]
 
 # ----------------------------------------------------------------
 # Diagonal mask function (VoiceTransformer style)
