@@ -19,6 +19,10 @@ class FixedPositionalEncoding(nn.Module):
 
     def forward(self, x: torch.Tensor, start: int = 0) -> torch.Tensor:
         """x: (B, T, D)"""
+        L = x.size(1)
+        if start + L > self.pe.size(0):                # 足りなければ拡張
+            extra = self._build_pe(start + L - self.pe.size(0))
+            self.pe = torch.cat([self.pe, extra.to(self.pe.device)], dim=0)
         return x + self.pe[start : start + x.size(1)]
 
 # ----------------------------------------------------------------
