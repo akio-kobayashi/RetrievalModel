@@ -60,7 +60,7 @@ class AlignTransformerSystem(pl.LightningModule):
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt, T_max=self.trainer.max_epochs, eta_min=self.hparams.lr/10.0
         )
-        return {"optimizer": opt, "scheduler": sched, "gradient_clip_val": 1.0,}
+        return {"optimizer": opt, "lr_scheduler": sched, "gradient_clip_val": 1.0}
 
     def greedy_decode(self, batch, max_len=200):
         src_h, src_p, _, _ = batch
