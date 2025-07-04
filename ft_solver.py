@@ -114,6 +114,10 @@ class AlignmentRVCSystem(pl.LightningModule):
             else:
                 unfreeze_module(self.rvc)
 
+        self.free_run_interval = free_run_interval
+        self.free_run_weight = free_run_weight
+
+
     def forward(self, src_hubert, src_pitch, max_len: int, mel_target_len: int):
         pred_hubert, pred_pitch = self.aligner.greedy_decode(src_hubert, src_pitch, max_len)
         mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_target_len)
