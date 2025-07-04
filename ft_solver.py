@@ -68,6 +68,9 @@ class AlignmentRVCSystem(pl.LightningModule):
                 k.removeprefix("model.") if k.startswith("model.") else k: v
                 for k, v in state_dict.items()
             }
+            if "posenc.pe" in state_dict:
+                state_dict.pop("posenc.pe")
+                
             self.aligner.load_state_dict(state_dict, strict=False)
 
         # 2) 通常のRVCモデル（LoRAなし）
