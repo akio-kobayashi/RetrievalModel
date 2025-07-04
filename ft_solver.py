@@ -45,6 +45,8 @@ class AlignmentRVCSystem(pl.LightningModule):
         update_aligner: bool = True,
         update_rvc: bool = True,
         load_from_pretrained = True,
+        free_run_interval: int = 100,
+        free_run_weight: float = 1.0,        
     ):
         super().__init__()
         self.save_hyperparameters()
