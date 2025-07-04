@@ -187,7 +187,7 @@ class AlignmentRVCSystem(pl.LightningModule):
           + self.hparams.mel_weight   * loss_mel
         )
     
-'''
+    '''
     def training_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
         loss_align, metrics = self.aligner(src_h, src_p, tgt_h, tgt_p)
@@ -214,7 +214,7 @@ class AlignmentRVCSystem(pl.LightningModule):
         self.val_losses.append(
             self.hparams.align_weight * loss_align + self.hparams.mel_weight * loss_mel
         )
-'''
+    '''
     def on_train_epoch_end(self):
         avg = torch.stack(self.train_losses).mean()
         self.log("train_loss_epoch", avg, prog_bar=True)
