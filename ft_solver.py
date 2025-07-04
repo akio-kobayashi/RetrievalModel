@@ -116,6 +116,80 @@ class AlignmentRVCSystem(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
+
+        # (1) teacher-forcing 整列損失
+        loss_tf, metrics = self.aligner(src_h, src_p, tgt_h, tgt_p)
+        loss_align = loss_tf
+
+        # (2) free-run 整列 L1 を 10 バッチに1回だけ追加
+        if batch_idx % self.free_run_interval == 0 and self.free_run_weight > 0:
+            with torch.no_grad():
+                pred_h, pred_p = self.aligner.greedy_decode(
+                    src_h[:1], src_p[:1], max_len=tgt_h.size(1)
+                )
+            T = tgt_h.size(1)
+            # pad or trunc
+            if pred_h.size(1) < T:
+                pad = T - pred_h.size(1)
+                pred_h = torch.cat([pred_h, torch.zeros(1, pad, pred_h.size(2), device=self.device)], dim=1)
+                pred_p = torch.cat([pred_p, torch.zeros(1, pad, device=self.device)], dim=1)
+            else:
+                pred_h = pred_h[:, :T]
+                pred_p = pred_p[:, :T]
+
+            # free-run L1 損失（先頭サンプルのみ）
+            loss_fr_h = F.l1_loss(pred_h, tgt_h[:1])
+            loss_fr_p = F.l1_loss(pred_p, tgt_p[:1])
+            loss_fr   = loss_fr_h + loss_fr_p
+
+            # teacher-forcing + free-run
+            loss_align = loss_tf + self.free_run_weight * loss_fr
+            metrics['fr_l1_h'] = loss_fr_h
+            metrics['fr_l1_p'] = loss_fr_p
+
+        # (3) RVC 側の L1 損失
+        pred_hubert = self.aligner.last_preds['hubert_pred']
+        pred_pitch  = self.aligner.last_preds['pitch_pred']
+        mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
+        loss_mel = F.l1_loss(mel_pred, mel_tgt)
+
+        # (4) 合計損失
+        total_loss = self.hparams.align_weight * loss_align \
+                   + self.hparams.mel_weight   * loss_mel
+
+        # ログ
+        self.log_dict(metrics,        on_step=True, on_epoch=True)
+        self.log("loss_align", loss_align, prog_bar=False)
+        self.log("loss_mel",   loss_mel,   prog_bar=False)
+        self.log("loss_total", total_loss, on_step=True, prog_bar=True)
+
+        self.train_losses.append(total_loss.detach())
+        return total_loss
+
+    def validation_step(self, batch, batch_idx):
+        src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
+
+        # teacher-forcing 整列損失
+        loss_align, _ = self.aligner(src_h, src_p, tgt_h, tgt_p)
+
+        # RVC 側の L1 損失
+        pred_hubert = self.aligner.last_preds['hubert_pred']
+        pred_pitch  = self.aligner.last_preds['pitch_pred']
+        mel_pred = self.rvc(pred_hubert, pred_pitch, target_length=mel_tgt.size(1))
+        loss_mel = F.l1_loss(mel_pred, mel_tgt)
+
+        # バリデーション用ログ
+        self.log("val_loss_mel", loss_mel, on_epoch=True, prog_bar=False)
+
+        # epoch 終了時に平均を出すための蓄積
+        self.val_losses.append(
+            self.hparams.align_weight * loss_align
+          + self.hparams.mel_weight   * loss_mel
+        )
+    
+'''
+    def training_step(self, batch, batch_idx):
+        src_h, src_p, tgt_h, tgt_p, mel_tgt = batch
         loss_align, metrics = self.aligner(src_h, src_p, tgt_h, tgt_p)
         pred_hubert, pred_pitch = self.aligner.last_preds['hubert_pred'], self.aligner.last_preds['pitch_pred']
         #self.aligner.greedy_decode(src_h, src_p)
@@ -140,7 +214,7 @@ class AlignmentRVCSystem(pl.LightningModule):
         self.val_losses.append(
             self.hparams.align_weight * loss_align + self.hparams.mel_weight * loss_mel
         )
-
+'''
     def on_train_epoch_end(self):
         avg = torch.stack(self.train_losses).mean()
         self.log("train_loss_epoch", avg, prog_bar=True)
