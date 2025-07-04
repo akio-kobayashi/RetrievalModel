@@ -101,6 +101,7 @@ def train(cfg: dict):
 
     # ─── trainer ───────────────────────
     trainer = pl.Trainer(
+        precision=32,
         max_epochs=cfg.get("max_epochs", 100),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.get("gpus", 1),
