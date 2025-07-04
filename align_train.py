@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 # local modules for Hubert-to-Hubert alignment
 from align_dataset import Hubert2HubertDataset, collate_h2h
 from align_solver import AlignTransformerSystem
+from greedy_eval import GreedyEvalCallback
 
 warnings.filterwarnings("ignore", message="Applied workaround for CuDNN issue.*")
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated.*")
@@ -74,6 +75,11 @@ def train(cfg: dict):
         save_last=True,
         every_n_epochs=1,
     )
+    greedy_cb = GreedyEvalCallback(
+        every_n_epochs = cfg.get("greedy_every_n_epochs", 5),
+        max_len = cfg.get("greedy_max_len", 1000),
+        num_batches = cfg.get("greedy_num_batches", 50)
+    )
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tb_logger = TensorBoardLogger(save_dir=cfg["log_dir"], name="h2h_align")
 
@@ -87,7 +93,7 @@ def train(cfg: dict):
         gradient_clip_algorithm="norm",
         default_root_dir=cfg["work_dir"],
         logger=tb_logger,
-        callbacks=[ckpt_cb, lr_monitor],
+        callbacks=[ckpt_cb, lr_monitor, greedy_cb],
         profiler="simple",
         check_val_every_n_epoch=1,
     )
